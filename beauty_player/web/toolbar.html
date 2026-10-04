@@ -1,0 +1,15 @@
+<!doctype html>
+<html lang="zh-CN"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>美颜 · 翻译流</title><link rel="stylesheet" href="player.css"></head>
+<body class="toolbar">
+<header class="toolbar-header"><div class="toolbar-heading"><h1>美颜</h1><span id="effect-status" class="effect-status" role="status">正在连接…</span></div><button id="close-tools" class="close-tools" aria-label="关闭美颜工具栏">×</button></header>
+<fieldset id="beauty-controls" disabled>
+  <div class="toolbar-enabled">启用美颜<label class="switch"><input id="enabled" type="checkbox" aria-label="启用美颜"><span></span></label></div>
+  <label class="control">磨皮<output id="smooth-value">25</output><input id="smooth" type="range" min="0" max="100" value="25"></label>
+  <label class="control">美白<output id="white-value">10</output><input id="white" type="range" min="0" max="100" value="10"></label>
+  <label class="control">瘦脸<output id="slim-value">0</output><input id="slim" type="range" min="0" max="100" value="0"></label>
+  <label class="control">大眼<output id="eyes-value">0</output><input id="eyes" type="range" min="0" max="100" value="0"></label>
+  <div class="buttons"><button id="natural">自然</button><button id="reset">全部归零</button></div>
+</fieldset>
+<p id="status" role="alert" hidden></p>
+<script type="module" src="toolbar.js"></script>
+</body></html>

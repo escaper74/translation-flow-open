@@ -1,0 +1,7 @@
+# Pinned experiment environment. Keep it isolated under workflow/tools/asr-lab.
+faster-whisper==1.2.1
+ctranslate2==4.6.0
+nvidia-cublas-cu12==12.4.5.8
+nvidia-cudnn-cu12==9.1.0.70
+nvidia-cuda-nvrtc-cu12==12.4.127
+setuptools==80.9.0

@@ -1,0 +1,24 @@
+GPUPixel (PixPark), Apache License 2.0
+https://github.com/pixpark/gpupixel
+https://github.com/pixpark/gpupixel/blob/main/src/filter/face_reshape_filter.cc
+Copyright (c) 2021 PixPark. All rights reserved.
+The coordinate deformation functions in web/renderer.js are adapted from this
+project. Changes: MediaPipe landmark selection, two-face rendering, bounded
+strengths, face-region and facial-feature masks. This is not the full GPUPixel
+engine, and it does not use or distribute Mars-Face. Skin smoothing and tonal
+adjustment in this player are separate implementations.
+License: see licenses/Apache-2.0.txt.
+
+MediaPipe Tasks Vision 0.10.21 (Google), Apache License 2.0
+https://github.com/google-ai-edge/mediapipe
+Runtime assets are downloaded explicitly by python -m beauty_player.setup;
+not downloaded during playback and not committed into the source repository.
+The runtime download preserves the project's license and npm package integrity.
+FaceLandmarker model version 1 / float16:
+https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+Model documentation:
+https://developers.google.com/edge/mediapipe/solutions/vision/face_landmarker
+
+The user-facing player makes no external network requests. Media decoding,
+face tracking and rendering stay on the local machine. Downloaded assets and
+their hashes are recorded in workflow/tools/beauty-player/runtime.json.

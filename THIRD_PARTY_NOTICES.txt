@@ -1,0 +1,157 @@
+Third-party inventory for source publication preparation — 2026-10-04
+
+Unless otherwise noted, this project's code, documentation and project-generated
+desktop artwork are licensed under Apache-2.0; see the root LICENSE. This inventory
+does not relicense third-party components or grant rights to a binary/model bundle.
+Preserve each component's actual license/NOTICE files when distributing it.
+Model cards, wheel metadata and code licenses are different evidence sources.
+
+CODE / ASSETS INCLUDED IN THIS SOURCE TREE
+
+GPUPixel (PixPark), Apache-2.0
+  https://github.com/pixpark/gpupixel
+  https://github.com/pixpark/gpupixel/blob/main/LICENSE
+  Adapted coordinate deformation functions: beauty_player/web/renderer.js.
+  Copyright and modification statement: beauty_player/THIRD_PARTY.txt.
+  License copy: beauty_player/licenses/Apache-2.0.txt.
+  This is not the full GPUPixel engine. The adaptation's upstream commit was not
+  recorded; preserve the existing attribution and confirm provenance at release.
+
+Desktop artwork: desktop/assets/feature-art.png
+  Project-generated artwork, added in source commit e93a4c1. On 2026-10-04 the
+  project owner confirmed its origin and approved its inclusion under this
+  project's Apache-2.0 license. The original image is included unchanged.
+
+Tests/fixtures
+  The current subtitle/media tests describe generated or manually written
+  ordinary fixtures; no downloaded feature film is present in the current tree.
+  The source release is a current-tree snapshot without development Git history
+  or private local artifacts.
+
+EXTERNAL TOOLS / MODELS — NOT INCLUDED IN SOURCE RELEASE
+
+Python 3.12 x64 and the Windows desktop framework
+  https://www.python.org/downloads/windows/
+  https://docs.python.org/3.12/license.html
+  Main Python environment uses the standard library. Windows PowerShell 5.1,
+  WPF/.NET Framework, Windows OCR/Shell and Edge are installed OS/application
+  components, not vendored here. Node 22+ is only used by optional browser tests.
+
+FFmpeg / FFprobe 8.1.1 essentials_build (Gyan, Windows x64)
+  https://www.gyan.dev/ffmpeg/builds/
+  https://github.com/FFmpeg/FFmpeg/commit/239f2c733d
+  The locally installed build's README.txt says GPL v3 and points to that source
+  revision. Do not describe this particular binary as an LGPL-only build.
+  A binary redistribution needs its GPL/source and linked-library obligations
+  handled; the source-only project points users to the upstream package.
+
+whisper.cpp v1.9.0 (CUDA 12.4 x64), MIT
+  https://github.com/ggml-org/whisper.cpp/releases/tag/v1.9.0
+  https://github.com/ggml-org/whisper.cpp/blob/v1.9.0/LICENSE
+  whisper-cli.exe and whisper-vad-speech-segments.exe are external executables.
+  Their CUDA DLLs retain their own terms; MIT does not relicense NVIDIA code.
+
+Whisper A weights: large-v3-turbo / large-v3, non-quantized GGML
+  https://huggingface.co/ggerganov/whisper.cpp
+  https://github.com/openai/whisper/blob/main/LICENSE
+  Upstream Whisper/code and model repository identify MIT. The GGML files are
+  conversion artifacts; retain upstream notices and verify downloaded versions.
+  LLPlayer-v0.3.0 is only the historical storage-directory name in this project;
+  the LLPlayer application is not required or redistributed.
+
+Silero VAD v6.2.0 GGML, optional opening-timing model
+  https://huggingface.co/ggml-org/whisper-vad
+  https://github.com/snakers4/silero-vad/blob/master/LICENSE
+  https://github.com/ggml-org/whisper.cpp/blob/v1.9.0/models/download-vad-model.sh
+  Silero upstream is MIT. The Whisper conversion/download is external; this
+  source release does not include the .bin file.
+
+faster-whisper 1.2.1 and CTranslate2 4.6.0, MIT
+  https://github.com/SYSTRAN/faster-whisper/tree/v1.2.1
+  https://github.com/OpenNMT/CTranslate2/tree/v4.6.0
+  C model: https://huggingface.co/Systran/faster-whisper-large-v3/tree/edaa852ec7e145841d8ffdb056a99866b5f0a478
+  The exact C model card declares MIT. setup-dependencies.ps1 pins that revision
+  and checks 7 files against recorded lengths and SHA256 values.
+
+NVIDIA CUDA/cuBLAS/cuDNN/TensorRT
+  https://docs.nvidia.com/cuda/archive/12.4.1/eula/index.html
+  https://docs.nvidia.com/deeplearning/cudnn/backend/v9.1.0/reference/eula.html
+  Proprietary NVIDIA terms apply. Only specifically distributable components
+  may be bundled under their conditions; do not apply the project's license to
+  them. No driver, CUDA wheel, TensorRT runtime or compiled engine is vendored.
+
+Jasna v0.10.0, AGPL-3.0 license text
+  https://github.com/Kruk2/jasna/tree/v0.10.0
+  https://github.com/Kruk2/jasna/blob/v0.10.0/LICENSE
+  This project launches the separately installed executable. It does not ship
+  Jasna source/binary or assert that a combined distribution has been cleared.
+  Frozen selected route: BasicVSR++ generic v1.2 and lada-yolo-v4 detector.
+  Lada model source/card: https://huggingface.co/ladaapp/lada/tree/45adf5770ad947ed90818c7d21b3831f34db6016
+  That repository declares AGPL-3.0. Exact model/engine lineage and all upstream
+  package notices must be checked before any model/binary redistribution.
+  Optional RF-DETR, supporter models and other models in Jasna's package are not
+  selected by this workflow; their terms must not be inferred from Jasna's code
+  license. GPU-specific TensorRT engines are generated locally, not portable
+  release assets. No promise of model or engine redistribution is made here.
+
+MediaPipe Tasks Vision 0.10.21, Apache-2.0
+  https://github.com/google-ai-edge/mediapipe/blob/v0.10.21/LICENSE
+  https://www.npmjs.com/package/@mediapipe/tasks-vision/v/0.10.21
+  python -m beauty_player.setup explicitly downloads the npm package and checks
+  its published integrity. It preserves the upstream license alongside assets.
+  FaceLandmarker float16 version 1 is separately downloaded from:
+  https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task
+  Model documentation: https://developers.google.com/edge/mediapipe/solutions/vision/face_landmarker
+  A dedicated license record for this exact model artifact was not established
+  in this audit. Do not infer model redistribution rights from the code license.
+
+Codex CLI and external translation services
+  https://learn.chatgpt.com/docs/codex/cli
+  https://learn.chatgpt.com/docs/auth
+  The installed CLI/account is external; historical project evidence used CLI
+  0.153.4, not a requirement to downgrade. Live service terms and usage charges
+  remain those of the chosen service; no account, credential or quota is bundled.
+
+FROZEN C PYTHON ENVIRONMENT
+
+The install script consumes requirements-faster-whisper.lock.txt through pip's
+configured package index (normally PyPI, https://pypi.org/). The exact entries
+below match that lock and locally installed distribution metadata. They are an
+inventory, not complete license texts for bundled native libraries. The pip lock
+pins versions, not wheel hashes/platform artifacts; a clean network installation
+has NOT been performed in this preparation task. Review each downloaded wheel's
+LICENSE/NOTICE files before redistributing a packaged environment.
+
+Package                     Version        Declared license / metadata
+anyio                       4.14.2         MIT
+av                          18.0.0         BSD-3-Clause; bundled FFmpeg has own terms
+certifi                     2026.7.22      MPL-2.0
+click                       8.4.2          BSD-3-Clause
+colorama                    0.4.6          BSD
+ctranslate2                 4.6.0          MIT
+faster-whisper              1.2.1          MIT
+filelock                    3.32.2         MIT
+flatbuffers                 25.12.19       Apache-2.0
+fsspec                      2026.7.0       BSD-3-Clause
+h11                         0.16.0         MIT
+hf-xet                      1.6.0          Apache-2.0
+httpcore                    1.0.9          BSD-3-Clause
+httpx                       0.28.1         BSD-3-Clause
+huggingface_hub             1.27.0         Apache-2.0
+idna                        3.18           BSD-3-Clause
+numpy                       2.5.1          BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0
+nvidia-cublas-cu12           12.4.5.8       NVIDIA proprietary
+nvidia-cuda-nvrtc-cu12       12.4.127       NVIDIA proprietary
+nvidia-cudnn-cu12            9.1.0.70       NVIDIA proprietary
+onnxruntime                 1.28.0         MIT
+packaging                   26.3           Apache-2.0 OR BSD-2-Clause
+protobuf                    7.35.1         BSD-3-Clause
+PyYAML                      6.0.3          MIT
+setuptools                  80.9.0         MIT
+tokenizers                  0.23.1         Apache-2.0
+tqdm                        4.70.0         MPL-2.0 AND MIT
+typing_extensions           4.16.0         PSF-2.0
+
+pip is supplied by the chosen Python/venv bootstrap, not pinned in this lock.
+The observed existing C environment used Python 3.12.13 / pip 25.0.1. This task's
+offline source checks use Python 3.12.14. No environment was upgraded or copied.

@@ -1,0 +1,54 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="成品 · 翻译流" Width="1100" Height="780" MinWidth="860" MinHeight="640" WindowStartupLocation="CenterOwner" Background="#FCFDFE" FontFamily="Microsoft YaHei UI, Segoe UI" FontSize="14" Foreground="#142333" UseLayoutRounding="True">
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="TranslationFlowTheme.xaml"/>
+      </ResourceDictionary.MergedDictionaries>
+    </ResourceDictionary>
+  </Window.Resources>
+  <StackPanel x:Name="LibraryContent">
+    <DockPanel Margin="0,0,0,24">
+      <StackPanel Orientation="Horizontal" DockPanel.Dock="Right" VerticalAlignment="Center">
+        <TextBlock Text="" FontFamily="Segoe MDL2 Assets" FontSize="22" VerticalAlignment="Center" Margin="0,0,12,0"/>
+        <TextBlock x:Name="LibraryFolderLabel" Text="成品文件夹" Foreground="#7B899C" VerticalAlignment="Center"/>
+        <Button x:Name="LibraryBrowse" Content="更改" Style="{StaticResource Quiet}" Margin="8,0,0,0"/>
+        <Button x:Name="LibraryRefresh" Content="" FontFamily="Segoe MDL2 Assets" ToolTip="刷新" Style="{StaticResource Quiet}"/>
+      </StackPanel>
+      <StackPanel>
+        <TextBlock Text="成品" Style="{StaticResource PageTitle}"/>
+        <TextBlock Text="处理好的视频，都在这里" FontSize="18" Foreground="#8290A1"/>
+      </StackPanel>
+    </DockPanel>
+    <TextBox x:Name="LibraryDirectory" Visibility="Collapsed"/>
+    <ListBox x:Name="LibraryGrid" Visibility="Collapsed"/>
+    <ComboBox x:Name="LibraryVariants" Visibility="Collapsed"/>
+    <TextBlock x:Name="LibraryEmpty" Text="还没有成品。处理完成的视频会自动出现在这里。" FontSize="18" Foreground="#8493A1" Margin="0,70,0,70" HorizontalAlignment="Center"/>
+    <WrapPanel x:Name="LibraryCards" Margin="-8,0,-8,0"/>
+    <Border x:Name="LibrarySelection" Style="{StaticResource Surface}" Margin="0,24,0,0" Padding="22,20" Visibility="Collapsed">
+      <StackPanel>
+        <DockPanel>
+          <StackPanel x:Name="LibraryActions" Orientation="Horizontal" DockPanel.Dock="Right">
+            <Button x:Name="LibraryBeauty" Content="✧  美颜播放" Style="{StaticResource Quiet}"/>
+            <Button x:Name="LibraryReview" Content="字幕校对" Style="{StaticResource Quiet}"/>
+            <Button x:Name="LibraryFolder" Content="打开文件夹" Style="{StaticResource Quiet}"/>
+          </StackPanel>
+          <Border BorderBrush="#00B0AB" BorderThickness="4,0,0,0" Padding="16,0,10,0">
+            <TextBlock x:Name="LibrarySelectedTitle" FontSize="23" FontWeight="SemiBold" VerticalAlignment="Center" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
+          </Border>
+        </DockPanel>
+        <Border BorderBrush="#E9EEF2" BorderThickness="0,1,0,0" Margin="0,18,0,0" Padding="0,12,0,0">
+          <DockPanel>
+            <Button x:Name="LibraryVersionsButton" Content="其他版本  ›" Style="{StaticResource Quiet}" DockPanel.Dock="Right"/>
+            <TextBlock x:Name="LibraryVersionLabel" Foreground="#8490A2" VerticalAlignment="Center"/>
+          </DockPanel>
+        </Border>
+        <WrapPanel x:Name="LibraryVersionChoices" Visibility="Collapsed" Margin="0,8,0,0"/>
+      </StackPanel>
+    </Border>
+    <Button x:Name="LibraryPlay" Visibility="Collapsed"/>
+    <Button x:Name="LibraryCleanup" Content="清理中间文件" Visibility="Collapsed"/>
+    <DockPanel Margin="0,18,0,0">
+      <TextBlock x:Name="LibraryStatus" Foreground="#7B899C" VerticalAlignment="Center" TextWrapping="Wrap"/>
+    </DockPanel>
+  </StackPanel>
+</Window>

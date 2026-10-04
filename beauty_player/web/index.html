@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="zh-CN">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>实时美颜播放 · 翻译流</title><link rel="stylesheet" href="player.css"></head>
+<body class="player">
+<header class="player-header">
+  <span class="player-mark" aria-hidden="true">✦</span><strong id="title">本地视频</strong>
+  <span id="effect-status" class="effect-status" role="status">正在准备…</span>
+  <button id="beauty-tools" class="primary" aria-haspopup="dialog" aria-expanded="false">美颜</button>
+</header>
+<main id="viewer">
+  <div id="stage"><video id="video" playsinline preload="metadata"></video><canvas id="canvas"></canvas><div id="subtitle"></div><div id="empty">正在打开视频…</div></div>
+  <footer class="transport">
+    <div class="timeline"><input id="seek" aria-label="播放进度" type="range" min="0" max="100" value="0" step="0.1"></div>
+    <div class="playback-controls">
+      <button id="play" class="primary" disabled>播放</button><button id="back" title="后退 10 秒">−10 秒</button><button id="forward" title="前进 10 秒">+10 秒</button><span id="time">00:00:00 / 00:00:00</span>
+      <span class="control-space"></span>
+      <label class="volume">音量<input id="volume" aria-label="音量" type="range" min="0" max="1" value="0.8" step="0.01"></label>
+      <label class="subtitle-toggle"><input id="subtitles" type="checkbox" checked>字幕</label>
+      <div class="zoom-controls" aria-label="画面缩放"><button id="zoom-out" aria-label="缩小画面">−</button><button id="zoom-reset" title="还原画面大小">100%</button><button id="zoom-in" aria-label="放大画面">+</button></div>
+      <button id="fullscreen">全屏</button>
+    </div>
+  </footer>
+</main>
+<p id="status" role="alert" hidden></p>
+<script type="module" src="player.js"></script>
+</body></html>

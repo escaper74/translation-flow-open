@@ -1,0 +1,2 @@
+# Preserve the checked-in workflow scripts' line endings.
+workflow/scripts/** -text

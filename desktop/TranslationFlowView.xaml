@@ -1,0 +1,519 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" xmlns:shell="clr-namespace:System.Windows.Shell;assembly=PresentationFramework" Title="翻译流" Width="1140" Height="890" MinWidth="960" MinHeight="720" WindowStartupLocation="CenterScreen" WindowStyle="None" ResizeMode="CanResize" Background="#FCFDFE" FontFamily="Microsoft YaHei UI, Segoe UI" FontSize="14" Foreground="#142333" UseLayoutRounding="True" SnapsToDevicePixels="True">
+  <shell:WindowChrome.WindowChrome>
+    <shell:WindowChrome CaptionHeight="0" ResizeBorderThickness="6" CornerRadius="10" GlassFrameThickness="0"/>
+  </shell:WindowChrome.WindowChrome>
+  <Window.Resources>
+    <ResourceDictionary>
+      <ResourceDictionary.MergedDictionaries>
+        <ResourceDictionary Source="TranslationFlowTheme.xaml"/>
+      </ResourceDictionary.MergedDictionaries>
+      <Style x:Key="ButtonOutline" TargetType="Button" BasedOn="{StaticResource {x:Type Button}}">
+        <Setter Property="Foreground" Value="#007D88"/>
+        <Setter Property="BorderBrush" Value="#17B5AF"/>
+      </Style>
+    </ResourceDictionary>
+  </Window.Resources>
+  <Border Background="#FCFDFE" BorderBrush="#DCE4EB" BorderThickness="1" CornerRadius="10">
+    <Grid>
+      <Grid.RowDefinitions>
+        <RowDefinition Height="76"/>
+        <RowDefinition Height="*"/>
+      </Grid.RowDefinitions>
+      <Border x:Name="TitleBar" Background="White" BorderBrush="#E8EEF2" BorderThickness="0,0,0,1" Padding="34,0,12,0">
+        <Grid>
+          <Grid.ColumnDefinitions>
+            <ColumnDefinition Width="250"/>
+            <ColumnDefinition Width="*"/>
+            <ColumnDefinition Width="220"/>
+          </Grid.ColumnDefinitions>
+          <StackPanel Orientation="Horizontal" VerticalAlignment="Center">
+            <Viewbox Width="54" Height="40" Margin="0,0,14,0">
+              <Canvas Width="60" Height="44">
+                <Path Data="M 2,31 C 8,1 20,0 33,17 C 42,29 52,17 59,3 C 53,35 41,39 26,23 C 15,11 10,18 2,31 Z">
+                  <Path.Fill>
+                    <LinearGradientBrush StartPoint="0,0" EndPoint="1,1">
+                      <GradientStop Color="#008C8B" Offset="0"/>
+                      <GradientStop Color="#68DDD0" Offset="1"/>
+                    </LinearGradientBrush>
+                  </Path.Fill>
+                </Path>
+                <Path Data="M 1,42 C 9,19 19,21 31,31 C 40,40 48,32 57,21 C 49,45 38,46 24,35 C 14,27 8,34 1,42 Z" Fill="#28C0B6" Opacity="0.7"/>
+              </Canvas>
+            </Viewbox>
+            <TextBlock Text="翻译流" FontWeight="Bold" FontSize="25" VerticalAlignment="Center"/>
+          </StackPanel>
+          <StackPanel Grid.Column="1" Orientation="Horizontal" HorizontalAlignment="Center" VerticalAlignment="Center">
+            <Border x:Name="HomeNavBorder" BorderThickness="0,0,0,2" BorderBrush="#00A5A2">
+              <Button x:Name="NewTaskButton" Content="首页" Style="{StaticResource Nav}"/>
+            </Border>
+            <Border x:Name="TasksNavBorder" BorderThickness="0,0,0,2" BorderBrush="Transparent">
+              <Button x:Name="ShowTasksButton" Content="任务" Style="{StaticResource Nav}"/>
+            </Border>
+            <Border x:Name="LibraryNavBorder" BorderThickness="0,0,0,2" BorderBrush="Transparent">
+              <Button x:Name="ShowLibraryButton" Content="成品" Style="{StaticResource Nav}"/>
+            </Border>
+          </StackPanel>
+          <StackPanel Grid.Column="2" Orientation="Horizontal" HorizontalAlignment="Right" VerticalAlignment="Center">
+            <Button x:Name="SettingsButton" Content="" FontFamily="Segoe MDL2 Assets" FontSize="19" ToolTip="设置" Style="{StaticResource Quiet}"/>
+            <Border BorderBrush="#E3E9EF" BorderThickness="1,0,0,0" Height="24" Margin="8,0"/>
+            <Button x:Name="MinimizeButton" Content="─" Style="{StaticResource Quiet}" Padding="12,8" ToolTip="最小化"/>
+            <Button x:Name="MaximizeButton" Content="□" Style="{StaticResource Quiet}" Padding="12,8" ToolTip="最大化"/>
+            <Button x:Name="CloseWindowButton" Content="×" FontSize="23" Style="{StaticResource Quiet}" Padding="12,5" ToolTip="关闭"/>
+          </StackPanel>
+        </Grid>
+      </Border>
+      <ScrollViewer x:Name="MainScroll" Grid.Row="1" VerticalScrollBarVisibility="Auto" HorizontalScrollBarVisibility="Disabled">
+        <StackPanel MaxWidth="1160" Margin="48,32,48,22">
+          <StackPanel x:Name="HomePanel">
+            <TextBlock Text="想做什么？" Style="{StaticResource PageTitle}"/>
+            <TextBlock Text="选一个，放入视频就能开始" Foreground="#8290A1" FontSize="18" Margin="0,0,0,26"/>
+            <Grid Height="410">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <Border Grid.Column="0" Style="{StaticResource Surface}" Margin="0,0,12,0" Padding="24,20,24,24" Background="White" BorderBrush="#E5EAF0">
+                <Border.Effect>
+                  <DropShadowEffect BlurRadius="20" ShadowDepth="5" Opacity="0.045" Color="#163F43"/>
+                </Border.Effect>
+                <Grid>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="208"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                  </Grid.RowDefinitions>
+                  <Image x:Name="PictureArtwork" Stretch="Uniform" Margin="-10,0,-10,10"/>
+                  <TextBlock Grid.Row="1" Text="去马" FontSize="34" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,6,0,8"/>
+                  <TextBlock Grid.Row="2" Text="处理视频马赛克" Foreground="#7B8798" FontSize="16" HorizontalAlignment="Center"/>
+                  <Button Grid.Row="4" x:Name="HomePictureButton" Content="选择视频  →" Style="{StaticResource Primary}" FontSize="17" FontWeight="SemiBold" MinHeight="49" Margin="0,24,0,0"/>
+                </Grid>
+              </Border>
+              <Border Grid.Column="1" Style="{StaticResource Surface}" Margin="6,0,6,0" Padding="24,20,24,24" Background="#F1FCFA" BorderBrush="#6CD2CD">
+                <Border.Effect>
+                  <DropShadowEffect BlurRadius="20" ShadowDepth="5" Opacity="0.045" Color="#163F43"/>
+                </Border.Effect>
+                <Grid>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="208"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                  </Grid.RowDefinitions>
+                  <Image x:Name="SubtitleArtwork" Stretch="Uniform" Margin="-10,0,-10,10"/>
+                  <TextBlock Grid.Row="1" Text="翻译" FontSize="34" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,6,0,8"/>
+                  <TextBlock Grid.Row="2" Text="生成精修中文字幕" Foreground="#7B8798" FontSize="16" HorizontalAlignment="Center"/>
+                  <Button Grid.Row="4" x:Name="HomeTranslationButton" Content="选择视频  →" Style="{StaticResource Primary}" FontSize="17" FontWeight="SemiBold" MinHeight="49" Margin="0,24,0,0"/>
+                </Grid>
+              </Border>
+              <Border Grid.Column="2" Style="{StaticResource Surface}" Margin="12,0,0,0" Padding="24,20,24,24" Background="White" BorderBrush="#E5EAF0">
+                <Border.Effect>
+                  <DropShadowEffect BlurRadius="20" ShadowDepth="5" Opacity="0.045" Color="#163F43"/>
+                </Border.Effect>
+                <Grid>
+                  <Grid.RowDefinitions>
+                    <RowDefinition Height="208"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="Auto"/>
+                    <RowDefinition Height="*"/>
+                    <RowDefinition Height="Auto"/>
+                  </Grid.RowDefinitions>
+                  <Image x:Name="BeautyArtwork" Stretch="Uniform" Margin="-10,0,-10,10"/>
+                  <TextBlock Grid.Row="1" Text="美颜" FontSize="34" FontWeight="Bold" HorizontalAlignment="Center" Margin="0,6,0,8"/>
+                  <TextBlock Grid.Row="2" Text="打开视频，边看边调" Foreground="#7B8798" FontSize="16" HorizontalAlignment="Center"/>
+                  <Button Grid.Row="4" x:Name="BeautyPlayerButton" Content="打开视频  ↗" Style="{StaticResource ButtonOutline}" FontSize="17" FontWeight="SemiBold" MinHeight="49" Margin="0,24,0,0"/>
+                </Grid>
+              </Border>
+            </Grid>
+            <Border Style="{StaticResource Surface}" Margin="0,26,0,0" Padding="22,14">
+              <StackPanel>
+                <DockPanel>
+                  <Button x:Name="HomeViewAllButton" Content="查看全部  ›" Style="{StaticResource Quiet}" DockPanel.Dock="Right"/>
+                  <TextBlock Text="最近处理" FontWeight="SemiBold" FontSize="17" VerticalAlignment="Center"/>
+                </DockPanel>
+                <Border BorderBrush="#EDF0F4" BorderThickness="0,1,0,0" Margin="0,5,0,0" Padding="0,12,0,0">
+                  <Grid>
+                    <Grid.ColumnDefinitions>
+                      <ColumnDefinition Width="76"/>
+                      <ColumnDefinition Width="*"/>
+                      <ColumnDefinition Width="Auto"/>
+                    </Grid.ColumnDefinitions>
+                    <Border Background="#F0F8F8" CornerRadius="9" Margin="0,0,16,0">
+                      <Image x:Name="RecentArtwork" Height="48" Stretch="Uniform"/>
+                    </Border>
+                    <StackPanel Grid.Column="1" VerticalAlignment="Center">
+                      <TextBlock x:Name="RecentTitle" Text="还没有处理过的视频" FontSize="17" FontWeight="Medium" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
+                      <TextBlock x:Name="RecentDescription" Text="从上面选择一个功能，开始第一项任务" Style="{StaticResource Muted}" Margin="0,4,0,0"/>
+                    </StackPanel>
+                    <Button Grid.Column="2" x:Name="RecentPlayButton" Content="▶  播放" Style="{StaticResource ButtonOutline}" Visibility="Collapsed"/>
+                  </Grid>
+                </Border>
+              </StackPanel>
+            </Border>
+            <TextBlock Text="去马与翻译可在下一步一起选择" Foreground="#A0ACBA" FontSize="13" HorizontalAlignment="Center" Margin="0,20,0,0"/>
+          </StackPanel>
+          <StackPanel x:Name="SetupPanel" Visibility="Collapsed" MaxWidth="870">
+            <DockPanel Margin="0,0,0,20">
+              <Button x:Name="SetupBackButton" Content="‹  返回首页" DockPanel.Dock="Right" Style="{StaticResource Quiet}"/>
+              <TextBlock x:Name="SetupTitle" Text="准备好，就开始" Style="{StaticResource PageTitle}"/>
+            </DockPanel>
+            <Border x:Name="DropZone" AllowDrop="True">
+              <Border x:Name="DropZoneInner" Background="#F2FAFA" BorderBrush="#CBE9E7" BorderThickness="1" CornerRadius="18" Padding="24">
+                <DockPanel>
+                  <Button x:Name="BrowseVideoButton" Content="选择视频" Style="{StaticResource ButtonOutline}" DockPanel.Dock="Right" Margin="20,0,0,0"/>
+                  <StackPanel>
+                    <TextBlock x:Name="DropTitle" Text="把视频拖到这里" FontSize="20" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
+                    <TextBlock x:Name="SelectedFilesText" Style="{StaticResource Muted}" Visibility="Collapsed" Margin="0,8,0,0"/>
+                    <TextBox x:Name="InputVideoBox" Visibility="Collapsed"/>
+                  </StackPanel>
+                </DockPanel>
+              </Border>
+            </Border>
+            <TextBlock x:Name="SelectedFunctionText" Style="{StaticResource Muted}" Margin="0,10,0,16"/>
+            <Grid Margin="0,0,0,14">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="20"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <ToggleButton x:Name="PictureFeatureButton" Style="{StaticResource FeatureCard}" Background="White">
+                <DockPanel>
+                  <TextBlock x:Name="PictureSelectedText" DockPanel.Dock="Right" VerticalAlignment="Center"/>
+                  <TextBlock Text="去马" FontSize="20" FontWeight="SemiBold"/>
+                </DockPanel>
+              </ToggleButton>
+              <ToggleButton x:Name="SubtitleFeatureButton" Grid.Column="2" Style="{StaticResource FeatureCard}" IsChecked="True">
+                <DockPanel>
+                  <TextBlock x:Name="SubtitleSelectedText" DockPanel.Dock="Right" VerticalAlignment="Center"/>
+                  <TextBlock Text="翻译" FontSize="20" FontWeight="SemiBold"/>
+                </DockPanel>
+              </ToggleButton>
+            </Grid>
+            <StackPanel x:Name="SubtitleImportPanel" Visibility="Collapsed" Margin="0,0,0,10">
+              <TextBlock x:Name="SubtitleImportText" Style="{StaticResource Muted}"/>
+              <CheckBox x:Name="ForceSubtitleTranslationBox" Content="已有中文字幕也重新翻译" Visibility="Collapsed" Margin="0,8,0,0"/>
+            </StackPanel>
+            <ComboBox x:Name="TaskModeBox" SelectedIndex="0" Visibility="Collapsed" IsTabStop="False">
+              <ComboBoxItem Content="精修中文字幕" Tag="translation"/>
+              <ComboBoxItem Content="精修中文字幕" Tag="srt_translation"/>
+              <ComboBoxItem Content="已有字幕视频换格式" Tag="media_repackage"/>
+              <ComboBoxItem Content="字幕与去马" Tag="translation_picture_final"/>
+              <ComboBoxItem Content="去马" Tag="picture_only"/>
+              <ComboBoxItem Content="未选择" Tag="none"/>
+            </ComboBox>
+            <Grid Margin="0,4,0,12">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="160"/>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="220"/>
+              </Grid.ColumnDefinitions>
+              <StackPanel x:Name="ProfilePanel">
+                <TextBlock Text="翻译风格" Style="{StaticResource Muted}"/>
+                <ListBox x:Name="ProfileBox" Style="{StaticResource Segment}" SelectedIndex="0" Margin="0,5,0,12">
+                  <ListBoxItem Content="自然" Tag="normal"/>
+                  <ListBoxItem Content="直白" Tag="adult_direct"/>
+                </ListBox>
+              </StackPanel>
+              <StackPanel x:Name="WhisperModelPanel" Grid.Column="1">
+                <TextBlock Text="对白识别" Style="{StaticResource Muted}"/>
+                <ListBox x:Name="WhisperModelBox" Style="{StaticResource Segment}" SelectedIndex="0" Margin="0,5,0,12">
+                  <ListBoxItem Content="Turbo（默认）" Tag="large-v3-turbo" ToolTip="Whisper large-v3-turbo：更快识别对白"/>
+                  <ListBoxItem Content="large-v3" Tag="large-v3" ToolTip="使用原 large-v3 识别模型"/>
+                </ListBox>
+              </StackPanel>
+              <Button Grid.Column="2" x:Name="ProviderSettingsButton" Content="翻译服务  ·  Codex  ›" Style="{StaticResource Quiet}" VerticalAlignment="Center"/>
+            </Grid>
+            <Grid x:Name="CodexStatusPanel" Margin="0,8,0,0">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <TextBlock x:Name="CodexStatusText" Style="{StaticResource Muted}" VerticalAlignment="Center"/>
+              <StackPanel Grid.Column="1" Orientation="Horizontal" VerticalAlignment="Center">
+                <Button x:Name="LoginCodexButton" Content="登录 ChatGPT" Style="{StaticResource Quiet}" ToolTip="打开官方浏览器登录页面；密码不会交给本程序"/>
+                <Button x:Name="InstallCodexButton" Content="安装说明" Style="{StaticResource Quiet}" Visibility="Collapsed"/>
+                <Button x:Name="RefreshCodexStatusButton" Content="重新检测" Style="{StaticResource Quiet}"/>
+              </StackPanel>
+            </Grid>
+            <TextBlock x:Name="PreparationText" Style="{StaticResource Muted}" Margin="0,8,0,0" Visibility="Collapsed"/>
+            <Border BorderBrush="#E8EEF1" BorderThickness="0,1,0,0" Padding="0,18,0,0" Margin="0,8,0,0">
+              <Grid>
+                <Grid.ColumnDefinitions>
+                  <ColumnDefinition Width="*"/>
+                  <ColumnDefinition Width="230"/>
+                </Grid.ColumnDefinitions>
+                <DockPanel>
+                  <Button x:Name="BrowseOutputButton" Content="更改" DockPanel.Dock="Right" Style="{StaticResource Quiet}"/>
+                  <StackPanel>
+                    <TextBlock Text="保存到" Style="{StaticResource Muted}"/>
+                    <TextBlock x:Name="OutputFolderLabel" Text="成品文件夹" FontSize="16" Margin="0,6,0,0" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
+                    <TextBox x:Name="OutputDirectoryBox" Visibility="Collapsed"/>
+                  </StackPanel>
+                </DockPanel>
+                <StackPanel x:Name="OutputFormatPanel" Grid.Column="1" Margin="20,0,0,0">
+                  <ListBox x:Name="OutputFormatBox" Style="{StaticResource Segment}" SelectedIndex="0">
+                    <ListBoxItem Content="MKV" Tag="mkv"/>
+                    <ListBoxItem Content="MP4" Tag="mp4"/>
+                  </ListBox>
+                  <TextBlock x:Name="OutputFormatHintText" Visibility="Collapsed"/>
+                </StackPanel>
+              </Grid>
+            </Border>
+            <TextBlock x:Name="InputErrorText" Foreground="#B04426" Margin="0,10,0,0">
+              <TextBlock.Style>
+                <Style TargetType="TextBlock" BasedOn="{StaticResource {x:Type TextBlock}}">
+                  <Style.Triggers>
+                    <Trigger Property="Text" Value="">
+                      <Setter Property="Visibility" Value="Collapsed"/>
+                    </Trigger>
+                  </Style.Triggers>
+                </Style>
+              </TextBlock.Style>
+            </TextBlock>
+            <Button x:Name="StartButton" Content="开始处理" Style="{StaticResource Primary}" FontSize="18" MinHeight="50" IsEnabled="False" HorizontalAlignment="Right" MinWidth="210" Margin="0,24,0,0"/>
+          </StackPanel>
+          <StackPanel x:Name="RunPanel" Visibility="Collapsed">
+            <TextBlock x:Name="RunStateText" Text="正在准备" FontSize="30" FontWeight="SemiBold"/>
+            <TextBlock x:Name="RunSourceText" Foreground="#778599" FontSize="16" Margin="0,12,0,32" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/>
+            <Grid Margin="0,0,0,14">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="Auto"/>
+              </Grid.ColumnDefinitions>
+              <TextBlock x:Name="StageText" VerticalAlignment="Bottom" FontSize="16" Margin="0,0,24,5"/>
+              <StackPanel Grid.Column="1">
+                <TextBlock x:Name="ProgressCaption" Text="总进度" Style="{StaticResource Muted}" HorizontalAlignment="Right"/>
+                <TextBlock x:Name="ProgressText" Text="0%" Foreground="#00A5A2" FontSize="38"/>
+              </StackPanel>
+            </Grid>
+            <ProgressBar x:Name="ProgressBar" Height="8" Minimum="0" Maximum="100" Foreground="#00A5A2" Background="#DDF2F1" BorderThickness="0">
+              <ProgressBar.Template>
+                <ControlTemplate TargetType="ProgressBar">
+                  <Grid>
+                    <Border x:Name="PART_Track" Background="{TemplateBinding Background}" CornerRadius="4"/>
+                    <Border x:Name="PART_Indicator" HorizontalAlignment="Left" Background="{TemplateBinding Foreground}" CornerRadius="4"/>
+                  </Grid>
+                </ControlTemplate>
+              </ProgressBar.Template>
+            </ProgressBar>
+            <UniformGrid Columns="3" Margin="0,24,0,0">
+              <StackPanel x:Name="RecognizeStep" Orientation="Horizontal" HorizontalAlignment="Center">
+                <Border x:Name="RecognizeDot" Style="{StaticResource StepDot}">
+                  <TextBlock x:Name="RecognizeMark" Text="1" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#778599"/>
+                </Border>
+                <TextBlock x:Name="RecognizeLabel" Text="识别" VerticalAlignment="Center"/>
+              </StackPanel>
+              <StackPanel x:Name="TranslateStep" Orientation="Horizontal" HorizontalAlignment="Center">
+                <Border x:Name="TranslateDot" Style="{StaticResource StepDot}">
+                  <TextBlock x:Name="TranslateMark" Text="2" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#778599"/>
+                </Border>
+                <TextBlock x:Name="TranslateLabel" Text="翻译" VerticalAlignment="Center"/>
+              </StackPanel>
+              <StackPanel x:Name="ExportStep" Orientation="Horizontal" HorizontalAlignment="Center">
+                <Border x:Name="ExportDot" Style="{StaticResource StepDot}">
+                  <TextBlock x:Name="ExportMark" Text="3" HorizontalAlignment="Center" VerticalAlignment="Center" Foreground="#778599"/>
+                </Border>
+                <TextBlock Text="导出" VerticalAlignment="Center"/>
+              </StackPanel>
+            </UniformGrid>
+            <Grid Margin="0,36,0,24">
+              <Grid.ColumnDefinitions>
+                <ColumnDefinition Width="*"/>
+                <ColumnDefinition Width="*"/>
+              </Grid.ColumnDefinitions>
+              <StackPanel>
+                <TextBlock Text="已用" Style="{StaticResource Muted}"/>
+                <TextBlock x:Name="ElapsedText" Text="00:00" FontSize="25" Margin="0,6,0,0"/>
+              </StackPanel>
+              <StackPanel Grid.Column="1">
+                <TextBlock x:Name="EtaLabel" Text="当前阶段预计还需" Style="{StaticResource Muted}"/>
+                <TextBlock x:Name="EtaText" Text="正在估算" FontSize="25" Margin="0,6,0,0"/>
+              </StackPanel>
+            </Grid>
+            <TextBlock x:Name="RecoverySummaryText" Foreground="#778599" Margin="0,0,0,18"/>
+            <Border x:Name="ResultFilesPanel" Visibility="Collapsed" Background="White" BorderBrush="#E3E9EF" BorderThickness="1" CornerRadius="12" Padding="18" Margin="0,0,0,18">
+              <StackPanel>
+                <TextBlock x:Name="SubtitleResultText" Margin="0,0,0,8"/>
+                <TextBlock x:Name="MkvResultText"/>
+              </StackPanel>
+            </Border>
+            <Expander x:Name="RunDetails" Header="查看详情" Margin="0,0,0,22">
+              <StackPanel Margin="18,14,0,0">
+                <TextBlock x:Name="DurationSummaryText" Style="{StaticResource Muted}"/>
+                <TextBlock x:Name="ReuseSummaryText" Style="{StaticResource Muted}" Margin="0,8,0,0"/>
+                <TextBlock x:Name="ReportResultText" Style="{StaticResource Muted}" Margin="0,8,0,0"/>
+                <StackPanel x:Name="WarningPanel" Visibility="Collapsed" Margin="0,10,0,0">
+                  <ItemsControl x:Name="WarningList" Foreground="#96600D"/>
+                </StackPanel>
+                <TextBox x:Name="EventLog" Style="{StaticResource InputStyle}" IsReadOnly="True" FontFamily="Consolas" FontSize="12" TextWrapping="Wrap" Height="180" VerticalScrollBarVisibility="Auto" Margin="0,14,0,0"/>
+              </StackPanel>
+            </Expander>
+            <TextBlock x:Name="QueueSummaryText" Style="{StaticResource Muted}" Visibility="Collapsed" Margin="0,0,0,18"/>
+            <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+              <Button x:Name="StopRunButton" Content="停止并保留进度" Visibility="Collapsed" IsEnabled="False" Margin="0,0,10,0"/>
+              <Button x:Name="RetryRunButton" Content="继续任务" Visibility="Collapsed" Style="{StaticResource Primary}" Margin="0,0,10,0"/>
+              <Button x:Name="BackgroundButton" Content="放到后台" Visibility="Collapsed" Style="{StaticResource Primary}"/>
+              <Button x:Name="OpenOutputButton" Content="打开文件夹" Visibility="Collapsed" Margin="0,0,10,0"/>
+              <Button x:Name="OpenResultButton" Content="打开结果" Visibility="Collapsed" Style="{StaticResource Primary}"/>
+            </StackPanel>
+          </StackPanel>
+          <StackPanel x:Name="TaskCenterPanel" Visibility="Collapsed">
+            <DockPanel>
+              <Button x:Name="TaskNewButton" Content="＋  新建任务" Style="{StaticResource ButtonOutline}" DockPanel.Dock="Right"/>
+              <TextBlock Text="任务" Style="{StaticResource PageTitle}"/>
+            </DockPanel>
+            <TextBlock x:Name="QueueStatusText" Foreground="#8090A1" FontSize="17" Margin="0,0,0,24" Text="还没有处理中的任务"/>
+            <TextBlock x:Name="QueueSubmissionText" Foreground="#9B7130" Visibility="Collapsed" Margin="0,0,0,12"/>
+            <StackPanel x:Name="ActiveTasksHost"/>
+            <DockPanel x:Name="WaitingSectionHeader" Margin="0,14,0,0">
+              <Button x:Name="PauseQueueButton" Content="暂停等待任务" Style="{StaticResource Quiet}" DockPanel.Dock="Right"/>
+              <TextBlock Text="接下来" Style="{StaticResource SectionTitle}" VerticalAlignment="Center"/>
+            </DockPanel>
+            <StackPanel x:Name="WaitingTasksHost"/>
+            <TextBlock x:Name="RecoverSectionHeader" Text="可继续的任务" Style="{StaticResource SectionTitle}" Margin="0,14,0,14"/>
+            <StackPanel x:Name="RecoverTasksHost"/>
+            <TextBlock x:Name="TaskEmptyText" Text="还没有任务，从首页选择一个视频开始。" Foreground="#81909F" FontSize="17" Margin="0,16,0,0" Visibility="Collapsed"/>
+            <DockPanel Margin="0,22,0,0">
+              <Button x:Name="StopQueueButton" Content="停止全部并保留进度" Style="{StaticResource Quiet}" DockPanel.Dock="Right"/>
+              <Button x:Name="RefreshTaskCenterButton" Content="刷新记录" Style="{StaticResource Quiet}" DockPanel.Dock="Left"/>
+              <TextBlock x:Name="TaskBackgroundHint" Text="●  关闭窗口后，任务仍会继续" Foreground="#9AA7B6" HorizontalAlignment="Center" VerticalAlignment="Center"/>
+            </DockPanel>
+            <Expander Header="任务记录与详情" Margin="0,10,0,0">
+              <StackPanel Margin="0,14,0,0">
+                <TextBlock x:Name="TaskCenterScopeText" Style="{StaticResource Muted}"/>
+                <ListBox x:Name="TaskHistoryGrid" MinHeight="80" MaxHeight="230" Background="White" BorderBrush="#E3E9EF" Margin="0,10,0,10">
+                  <ListBox.ItemTemplate>
+                    <DataTemplate>
+                      <StackPanel Orientation="Horizontal" Margin="8">
+                        <TextBlock Text="{Binding SourceName}" Width="260"/>
+                        <TextBlock Text="{Binding ModeLabel}" Width="160"/>
+                        <TextBlock Text="{Binding StatusLabel}"/>
+                      </StackPanel>
+                    </DataTemplate>
+                  </ListBox.ItemTemplate>
+                </ListBox>
+                <TextBlock x:Name="TaskCenterDetailText" Style="{StaticResource Muted}"/>
+                <Button x:Name="ResumeTaskButton" Content="按原请求继续" HorizontalAlignment="Right" Style="{StaticResource Primary}" IsEnabled="False" Margin="0,10,0,0"/>
+              </StackPanel>
+            </Expander>
+            <StackPanel x:Name="QueuePanel" Visibility="Collapsed" Height="0">
+              <ListBox x:Name="QueueGrid"/>
+              <Button x:Name="ViewQueueItemButton"/>
+              <Button x:Name="ResumeQueueItemButton"/>
+              <Button x:Name="BackFromTasksButton"/>
+            </StackPanel>
+          </StackPanel>
+          <ContentControl x:Name="LibraryPageHost" Visibility="Collapsed"/>
+        </StackPanel>
+      </ScrollViewer>
+      <Grid x:Name="SettingsOverlay" Grid.RowSpan="2" Visibility="Collapsed" Background="#55142333">
+        <Border HorizontalAlignment="Right" Width="610" Background="White" Padding="32">
+          <Grid>
+            <Grid.RowDefinitions>
+              <RowDefinition Height="Auto"/>
+              <RowDefinition Height="*"/>
+            </Grid.RowDefinitions>
+            <DockPanel Margin="0,0,0,24">
+              <Button x:Name="CloseSettingsButton" Content="完成" DockPanel.Dock="Right" Style="{StaticResource Primary}"/>
+              <TextBlock Text="设置" FontSize="30" FontWeight="Bold"/>
+            </DockPanel>
+            <ScrollViewer Grid.Row="1" VerticalScrollBarVisibility="Auto">
+              <StackPanel>
+                <TextBlock Foreground="#B04426" Text="{Binding Text, ElementName=InputErrorText}" TextWrapping="Wrap"/>
+                <Grid x:Name="ProviderPanel" Margin="0,10,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="112"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock Text="翻译服务" Style="{StaticResource FieldLabel}"/>
+                  <ListBox x:Name="ProviderBox" SelectedIndex="0" Style="{StaticResource Segment}" Grid.Column="1">
+                    <ListBox.ItemsPanel>
+                      <ItemsPanelTemplate>
+                        <UniformGrid Columns="2"/>
+                      </ItemsPanelTemplate>
+                    </ListBox.ItemsPanel>
+                    <ListBoxItem Content="Codex / ChatGPT" Tag="codex"/>
+                    <ListBoxItem Content="DeepSeek" Tag="deepseek"/>
+                    <ListBoxItem Content="Qwen" Tag="qwen"/>
+                    <ListBoxItem Content="Kimi" Tag="kimi"/>
+                    <ListBoxItem Content="OpenAI" Tag="openai"/>
+                    <ListBoxItem Content="Anthropic" Tag="anthropic"/>
+                    <ListBoxItem Content="Gemini" Tag="gemini"/>
+                  </ListBox>
+                </Grid>
+                <Grid x:Name="ApiKeyPanel" Visibility="Collapsed" Margin="0,10,0,0">
+                  <Grid.ColumnDefinitions>
+                    <ColumnDefinition Width="112"/>
+                    <ColumnDefinition Width="*"/>
+                  </Grid.ColumnDefinitions>
+                  <TextBlock x:Name="ApiKeyLabel" Text="API Key" Style="{StaticResource FieldLabel}"/>
+                  <Border Grid.Column="1" BorderBrush="#E3E9EF" BorderThickness="1" Background="White" CornerRadius="8">
+                    <PasswordBox x:Name="ApiKeyBox" BorderThickness="0" Background="Transparent" Padding="12,9" MinHeight="40" VerticalContentAlignment="Center" ToolTip="仅用于本次任务，不会保存到任务记录"/>
+                  </Border>
+                </Grid>
+                <Expander x:Name="MoreSettings" Header="模型与本地工具" Margin="0,18,0,0">
+                  <StackPanel Margin="20,14,0,0">
+                    <StackPanel x:Name="ModelPanel">
+                      <TextBlock Text="模型" Style="{StaticResource Muted}"/>
+                      <TextBox x:Name="ModelBox" Style="{StaticResource InputStyle}" Margin="0,5,0,10" ToolTip="填写服务提供的模型 ID"/>
+                      <Grid x:Name="EndpointPanel" Margin="0,0,0,12">
+                        <Grid.ColumnDefinitions>
+                          <ColumnDefinition Width="*"/>
+                          <ColumnDefinition Width="18"/>
+                          <ColumnDefinition Width="*"/>
+                        </Grid.ColumnDefinitions>
+                        <StackPanel>
+                          <TextBlock Text="服务地域" Style="{StaticResource Muted}"/>
+                          <ComboBox x:Name="EndpointBox" DisplayMemberPath="Label" Margin="0,5,0,0"/>
+                        </StackPanel>
+                        <StackPanel Grid.Column="2">
+                          <TextBlock Text="单次输出上限（token）" Style="{StaticResource Muted}"/>
+                          <TextBox x:Name="TokenCapBox" Text="8192" Style="{StaticResource InputStyle}" Margin="0,5,0,0"/>
+                        </StackPanel>
+                      </Grid>
+                    </StackPanel>
+                    <Expander Header="本地工具">
+                      <StackPanel Margin="16,10,0,0">
+                        <TextBlock Text="Python" Style="{StaticResource Muted}"/>
+                        <TextBox x:Name="PythonPathBox" Style="{StaticResource InputStyle}" Margin="0,5,0,10"/>
+                        <TextBlock Text="工具目录" Style="{StaticResource Muted}"/>
+                        <TextBox x:Name="ToolRootBox" Style="{StaticResource InputStyle}" Margin="0,5,0,8"/>
+                        <TextBlock Text="SRT 翻译不需要视频工具。" Style="{StaticResource Muted}"/>
+                      </StackPanel>
+                    </Expander>
+                    <TextBlock x:Name="TaskModeHintText" Style="{StaticResource Muted}" Margin="0,12,0,0"/>
+                  </StackPanel>
+                </Expander>
+                <Border BorderBrush="#E3E9EF" BorderThickness="0,1,0,0" Padding="0,20,0,0" Margin="0,24,0,0">
+                  <StackPanel>
+                    <TextBlock Text="视频工具" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                    <Button x:Name="RepackageToolButton" Content="已有字幕的视频换格式   →" HorizontalAlignment="Left"/>
+                    <TextBlock Text="保留画面、声音和字幕，另存一份视频。" Style="{StaticResource Muted}" Margin="0,10,0,0"/>
+                  </StackPanel>
+                </Border>
+              </StackPanel>
+            </ScrollViewer>
+          </Grid>
+        </Border>
+      </Grid>
+      <Grid x:Name="ConsentOverlay" Grid.RowSpan="2" Visibility="Collapsed" Background="#660E182A">
+        <Border Width="600" MaxHeight="650" HorizontalAlignment="Center" VerticalAlignment="Center" Background="#FFFFFF" CornerRadius="16" Padding="30">
+          <ScrollViewer VerticalScrollBarVisibility="Auto">
+            <StackPanel>
+              <TextBlock Text="开始前确认一下" FontSize="25" FontWeight="SemiBold" Margin="0,0,0,18"/>
+              <TextBlock x:Name="ConsentDetailText" LineHeight="25"/>
+              <TextBlock Text="这项同意只对当前这一次任务有效。" Style="{StaticResource Muted}" Margin="0,18,0,24"/>
+              <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                <Button x:Name="CancelConsentButton" Content="返回修改" Margin="0,0,10,0"/>
+                <Button x:Name="ConfirmConsentButton" Content="同意并开始" Style="{StaticResource Primary}"/>
+              </StackPanel>
+            </StackPanel>
+          </ScrollViewer>
+        </Border>
+      </Grid>
+    </Grid>
+  </Border>
+</Window>

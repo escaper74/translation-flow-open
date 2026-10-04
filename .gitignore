@@ -1,0 +1,26 @@
+# Local runtime dependencies are copied for use on this machine, not committed.
+workflow/tools/
+
+# Generated work and deliverables.
+workflow/output/*
+!workflow/output/.gitkeep
+deliverables/*
+!deliverables/.gitkeep
+samples/*
+!samples/.gitkeep
+
+# Secrets and local overrides.
+/api及密码.txt
+/api密码.txt
+config/local.psd1
+.venv/
+.local/
+.env
+.env.*
+
+# Python and translation caches.
+__pycache__/
+*.py[cod]
+translate_cache/
+polish_cache/
+*.partial.mkv
