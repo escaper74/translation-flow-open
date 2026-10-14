@@ -200,8 +200,8 @@ class BeautyDesktopTests(unittest.TestCase):
             script = f"""
 $ErrorActionPreference='Stop'
 Add-Type -AssemblyName PresentationFramework
-. '{root}/desktop/TranslationFlowProcessBridge.ps1'
-. '{root}/desktop/TranslationFlowBeauty.ps1'
+. '{root}/src/desktop/TranslationFlowProcessBridge.ps1'
+. '{root}/src/desktop/TranslationFlowBeauty.ps1'
 $Window=$null
 $ProjectRoot='{work}'
 $PythonPathBox=New-Object Windows.Controls.TextBox

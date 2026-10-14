@@ -12,7 +12,7 @@ from full_workflow.picture import PictureRequest, PictureRunner
 from translation_flow.desktop_access import check_readiness
 from translation_flow.task_queue import request_info, TaskQueue
 from translation_flow.cancellation import TranslationCancelled
-import test_frontend_presentation as frontend
+from tests import test_frontend_presentation as frontend
 
 
 class ProductDeliveryTests(unittest.TestCase):

@@ -136,7 +136,7 @@ class TranslationFlowRunner:
     ) -> None:
         self.request = request
         self.api_key = api_key
-        self.project_root = Path(project_root or Path(__file__).resolve().parents[1])
+        self.project_root = Path(project_root or Path(__file__).resolve().parents[2])
         self.tool_root = resolve_tool_root(tool_root, project_root=self.project_root)
         self.python = Path(python or sys.executable)
         self.provider_factory = provider_factory

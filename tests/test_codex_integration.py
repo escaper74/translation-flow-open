@@ -20,7 +20,7 @@ from translation_flow.translation.codex_provider import (
     cli_environment, codex_status,
 )
 from translation_flow.translation.pipeline import run_translation
-from test_codex_source_review import write_asr
+from tests.test_codex_source_review import write_asr
 
 
 AVAILABLE = {"status": "available", "message": "ready", "cli_version": "codex-cli test"}

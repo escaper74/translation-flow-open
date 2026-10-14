@@ -22,7 +22,7 @@ from pathlib import Path
 from typing import Any
 
 if __package__ in {None, ""}:
-    sys.path.insert(0, str(Path(__file__).resolve().parents[3]))
+    sys.path.insert(0, str(Path(__file__).resolve().parents[2] / "src"))
 
 from acceptance.srt_utils import Cue, parse_srt, structure_failures
 

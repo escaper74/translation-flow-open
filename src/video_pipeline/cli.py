@@ -32,7 +32,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser.add_argument(
         "--tool-root",
         type=Path,
-        default=Path(__file__).resolve().parents[1] / "workflow" / "tools",
+        default=Path(__file__).resolve().parents[2] / "workflow" / "tools",
     )
     parser.add_argument("--job-dir", type=Path)
     parser.add_argument("--cleanup-on-success", type=parse_bool, default=True)

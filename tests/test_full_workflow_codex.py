@@ -9,9 +9,9 @@ import threading
 import unittest
 from unittest.mock import Mock, patch
 
-import test_full_workflow as full_fixtures
-from test_codex_integration import FakeAsr, FakeCodex, FakePackager, FakeTools
-from test_codex_source_review import write_asr
+from tests import test_full_workflow as full_fixtures
+from tests.test_codex_integration import FakeAsr, FakeCodex, FakePackager, FakeTools
+from tests.test_codex_source_review import write_asr
 from translation_flow.contracts import ProviderRequest
 from translation_flow.runner import TranslationFlowRunner
 from translation_flow.srt import parse_srt, subtitle_digest, write_srt

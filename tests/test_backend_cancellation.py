@@ -13,8 +13,8 @@ from translation_flow.translation.codex_provider import TranslationCancelled
 from translation_flow.translation.pipeline import run_translation
 from translation_flow.translation.pipeline import _chat_with_retries
 from translation_flow.translation.provider import RetryableProviderError
-import test_video_api_translation as api_fixtures
-import test_codex_integration as codex_fixtures
+from tests import test_video_api_translation as api_fixtures
+from tests import test_codex_integration as codex_fixtures
 
 
 class BackendCancellationTests(unittest.TestCase):

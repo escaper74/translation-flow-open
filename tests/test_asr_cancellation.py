@@ -14,8 +14,8 @@ from unittest.mock import patch
 from translation_flow.asr import AsrPipeline
 from translation_flow.cancellation import run_asr_process
 from translation_flow.translation.codex_provider import TranslationCancelled
-from workflow.scripts import transcribe_whisper_chunked as chunks
-import test_asr_packaging as asr_fixtures
+from scripts import transcribe_whisper_chunked as chunks
+from tests import test_asr_packaging as asr_fixtures
 
 
 def is_alive(pid):

@@ -14,7 +14,7 @@ import unittest
 from translation_flow.queue_cli import rpc
 
 ROOT = Path(__file__).resolve().parents[1]
-UI = ROOT / "desktop" / "Start-TranslationFlow.ps1"
+UI = ROOT / "src/desktop" / "Start-TranslationFlow.ps1"
 
 
 @unittest.skipUnless(os.name == "nt", "WPF is Windows-only")
@@ -72,8 +72,8 @@ $script:TestResult|ConvertTo-Json -Depth 5 -Compress
     def isolated_queue(self, root):
         state = root / "queue-state"
         project = root / "project"
-        shutil.copytree(ROOT / "translation_flow", project / "translation_flow", ignore=shutil.ignore_patterns("__pycache__"))
-        task_queue = project / "translation_flow/task_queue.py"
+        shutil.copytree(ROOT / "src/translation_flow", project / "src/translation_flow", ignore=shutil.ignore_patterns("__pycache__"))
+        task_queue = project / "src/translation_flow/task_queue.py"
         task_queue.write_text(task_queue.read_text(encoding="utf-8").replace(
             "self.launcher = launcher or self._launch",
             "self.launcher = launcher or (lambda *args: (_ for _ in ()).throw(RuntimeError('offline fixture worker required')))"), encoding="utf-8")
@@ -117,7 +117,7 @@ $script:TestResult|ConvertTo-Json -Depth 5 -Compress
                         worker.wait(timeout=5)
 
     def test_wpf_restart_start_batch_chains_success_failure_and_resume(self):
-        from test_task_queue import make_request
+        from tests.test_task_queue import make_request
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             for name in ("previous", "next", "fail", "last"):
@@ -496,8 +496,8 @@ $script:TestResult=@{status='passed'}
             state = root / "queue-state"
             # A crashed fixture must never fall back to a live provider or media job.
             project = root / "project"
-            shutil.copytree(ROOT / "translation_flow", project / "translation_flow", ignore=shutil.ignore_patterns("__pycache__"))
-            task_queue = project / "translation_flow/task_queue.py"
+            shutil.copytree(ROOT / "src/translation_flow", project / "src/translation_flow", ignore=shutil.ignore_patterns("__pycache__"))
+            task_queue = project / "src/translation_flow/task_queue.py"
             queue_source = task_queue.read_text(encoding="utf-8")
             queue_source = queue_source.replace("self.launcher = launcher or self._launch", "self.launcher = launcher or (lambda *args: (_ for _ in ()).throw(RuntimeError('offline fixture worker required')))")
             task_queue.write_text(queue_source, encoding="utf-8")

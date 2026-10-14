@@ -96,7 +96,7 @@ class SubtitleDetectionTests(unittest.TestCase):
 @unittest.skipUnless(os.name == 'nt', 'WPF is Windows-only')
 class SubtitleImportUiTests(unittest.TestCase):
     def test_mixed_batch_skip_override_and_picture_routes(self):
-        import test_frontend_presentation as frontend
+        from tests import test_frontend_presentation as frontend
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             for name in ('with.mp4', 'without.mp4'):
@@ -173,7 +173,7 @@ class SubtitleDetectionSyntheticTests(unittest.TestCase):
             self.assertEqual('embedded', inspect_subtitles(soft, tools=tools)['kind'])
 
     def test_real_async_import_reaches_wpf_without_service(self):
-        import test_frontend_presentation as frontend
+        from tests import test_frontend_presentation as frontend
         with tempfile.TemporaryDirectory() as tmp:
             root = Path(tmp)
             # External subtitle detection uses real local content, no media decoder.

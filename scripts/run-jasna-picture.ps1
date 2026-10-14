@@ -7,12 +7,14 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$scriptRoot = Split-Path -Parent $MyInvocation.MyCommand.Path
+$scriptRoot = Split-Path -Parent $PSScriptRoot
 $utf8 = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = $utf8
 $OutputEncoding = $utf8
 $env:PYTHONIOENCODING = "utf-8"
 
+$previousPythonPath = $env:PYTHONPATH
+$env:PYTHONPATH = (Join-Path $scriptRoot "src") + [IO.Path]::PathSeparator + $previousPythonPath
 Push-Location $scriptRoot
 try {
     if ($PythonPath) {
@@ -40,11 +42,12 @@ try {
             throw "No usable Python found. Pass -PythonPath explicitly; this workflow uses only the Python standard library."
         }
     }
-    & $resolvedPython -m final_mux.cli @RunnerArguments
+    & $resolvedPython -m jasna_picture.cli @RunnerArguments
     if ($LASTEXITCODE -ne 0) {
         exit $LASTEXITCODE
     }
 }
 finally {
+    $env:PYTHONPATH = $previousPythonPath
     Pop-Location
 }

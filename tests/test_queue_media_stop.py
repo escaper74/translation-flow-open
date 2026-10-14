@@ -8,8 +8,8 @@ from unittest.mock import patch
 from media_planning.cli import main
 from media_planning.runner import MediaRepackageRunner
 from translation_flow.translation.codex_provider import TranslationCancelled
-import test_media_repackage as fixture
-from test_media_repackage import _completed, _probe, _stream, _Events
+from tests import test_media_repackage as fixture
+from tests.test_media_repackage import _completed, _probe, _stream, _Events
 
 
 class QueueMediaStopTests(unittest.TestCase):

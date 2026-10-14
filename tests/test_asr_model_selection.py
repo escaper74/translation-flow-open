@@ -14,8 +14,8 @@ from translation_flow.codex_runner import _job_identity
 from translation_flow.events import EventEmitter
 from translation_flow.runner import TranslationFlowRunner
 from translation_flow.task_queue import request_info
-import test_asr_packaging as asr_fixtures
-from test_codex_integration import FakeAsr, FakeCodex, FakePackager, FakeTools
+from tests import test_asr_packaging as asr_fixtures
+from tests.test_codex_integration import FakeAsr, FakeCodex, FakePackager, FakeTools
 
 
 class AsrModelSelectionTests(unittest.TestCase):
@@ -28,14 +28,14 @@ class AsrModelSelectionTests(unittest.TestCase):
             source.write_bytes(b"fixture")
             command = r'''
 $ErrorActionPreference = 'Stop'
-$ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'desktop/Start-TranslationFlow.ps1'), [ref]$null, [ref]$null)
+$ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'src/desktop/Start-TranslationFlow.ps1'), [ref]$null, [ref]$null)
 $names = @('Get-StableJobId','Start-ConfirmedRun','Get-SelectedTaskMode','Get-SelectedOutputTarget','Get-SelectedProviderSettings')
 foreach ($node in $ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]}, $true)) {
     if ($node.Name -in $names) { Invoke-Expression $node.Extent.Text }
 }
-. (Join-Path $repo 'desktop/TranslationFlowProvider.ps1')
-. (Join-Path $repo 'desktop/TranslationFlowTaskCenter.ps1')
-. (Join-Path $repo 'desktop/TranslationFlowQueueUi.ps1')
+. (Join-Path $repo 'src/desktop/TranslationFlowProvider.ps1')
+. (Join-Path $repo 'src/desktop/TranslationFlowTaskCenter.ps1')
+. (Join-Path $repo 'src/desktop/TranslationFlowQueueUi.ps1')
 $OutputDirectoryBox = @{Text=$target}
 $InputVideoBox = @{Text=$source}
 $TaskModeBox = @{SelectedItem=@{Tag='translation'}}

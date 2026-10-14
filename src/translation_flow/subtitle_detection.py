@@ -80,7 +80,7 @@ def windows_ocr(images: list[Path]) -> list[dict]:
     shell = Path(os.environ.get('SystemRoot', r'C:\Windows')) / 'System32/WindowsPowerShell/v1.0/powershell.exe'
     payload = json.dumps([str(p) for p in images], ensure_ascii=False).encode('utf-8')
     output = _run([shell, '-NoProfile', '-NonInteractive', '-ExecutionPolicy', 'Bypass', '-File',
-                   PROJECT_ROOT / 'desktop/Read-SubtitleOcr.ps1'], input=payload, timeout=45)
+                   PROJECT_ROOT / 'src/desktop/Read-SubtitleOcr.ps1'], input=payload, timeout=45)
     result = json.loads(output.decode('utf-8-sig'))
     if result['status'] != 'ok':
         raise RuntimeError(result['message'])

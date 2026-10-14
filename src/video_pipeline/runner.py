@@ -532,9 +532,9 @@ class VideoPipelineRunner:
     @staticmethod
     def _implementation_fingerprint() -> dict[str, Any]:
         package_root = Path(__file__).resolve().parent
-        repo_root = package_root.parent
+        repo_root = package_root.parent.parent
         files = sorted(package_root.glob("*.py"))
-        wrapper = repo_root / "run-video-processing.ps1"
+        wrapper = repo_root / "scripts" / "run-video-processing.ps1"
         if wrapper.is_file():
             files.append(wrapper)
         entries = [

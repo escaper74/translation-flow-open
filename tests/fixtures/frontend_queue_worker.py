@@ -6,7 +6,7 @@ import subprocess
 import sys
 import time
 
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
+sys.path[:0] = [str(Path(__file__).resolve().parents[2] / "src"), str(Path(__file__).resolve().parents[2])]
 from translation_flow.events import EventEmitter
 from translation_flow.queue_cli import serve
 from translation_flow.task_queue import write_json

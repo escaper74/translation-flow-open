@@ -13,7 +13,7 @@ VERSION = "0.10.21"
 FILES = ["vision_bundle.mjs", "wasm/vision_wasm_internal.js", "wasm/vision_wasm_internal.wasm",
          "wasm/vision_wasm_nosimd_internal.js", "wasm/vision_wasm_nosimd_internal.wasm"]
 MODEL_URL = "https://storage.googleapis.com/mediapipe-models/face_landmarker/face_landmarker/float16/1/face_landmarker.task"
-DEFAULT = Path(__file__).resolve().parents[1] / "workflow/tools/beauty-player"
+DEFAULT = Path(__file__).resolve().parents[2] / "workflow/tools/beauty-player"
 
 def get(url):
     with urllib.request.urlopen(url, timeout=90) as response:

@@ -6,7 +6,7 @@
 
 用户认可当前版本后，00 将当前正式入口的实现固化为 `v1-desktop-accepted-20261004`，供 03 准备开源材料与安装路径。包含 Turbo/large-v3 选择、开头局部校时、阶段计时和成品清理入口；不是仅保存此前的 `70d6835`。本次不推送、不改变远端可见性、不运行真实媒体/GPU/翻译服务，不覆盖旧成品或检查点。
 
-发布前复验：`python -m unittest discover -s tests -q` 共 390 项，375 通过、15 项环境跳过，用时 120.153 秒；`tests_jasna_picture` 33 项全部通过。`compileall`、桌面 `-ValidateOnly` 和 `git diff --check` 通过，入口确认默认 `large-v3-turbo`、可选 `large-v3`。停止测试仅创建并终止本次模拟进程树，未操作生产任务。上述为代码/离线入口复验，既有真人观看证据仍按原范围保留，不据此新造整片验收记录。
+发布前复验：`python -m unittest discover -s tests -q` 共 390 项，375 通过、15 项环境跳过，用时 120.153 秒；当时的 `tests_jasna_picture`（现为 `tests/picture`）33 项全部通过。`compileall`、桌面 `-ValidateOnly` 和 `git diff --check` 通过，入口确认默认 `large-v3-turbo`、可选 `large-v3`。停止测试仅创建并终止本次模拟进程树，未操作生产任务。上述为代码/离线入口复验，既有真人观看证据仍按原范围保留，不据此新造整片验收记录。
 
 源码标签不包含被忽略的工具、模型、成片、缓存或本机配置。03 须据此补齐可复现安装和对外资料，不能把本机已有组件当成下载源码后自动具备。此节更新下文早期“尚未提交”的工程状态，但不改变各次历史测试的证据范围。
 
@@ -26,6 +26,10 @@
 
 ## 新机器安装
 
+源码位于 `src/`，安装脚本位于 `scripts/`。桌面仍从根目录 `启动翻译流.cmd` 打开；命令行可用 `.\scripts\python.cmd -m <模块名>`，它自动加载本项目源码并优先使用 `.venv`，也可通过当前进程的 `TRANSLATION_FLOW_PYTHON` 指定 Python。使用下文的原生 `python` 或 `$Python` 命令前，在仓库根目录的同一 PowerShell 窗口设置 `$env:PYTHONPATH = (Resolve-Path .\src).Path`。
+
+2026-10-14 目录整理后，`.\scripts\python.cmd -m unittest discover -s tests -t . -q` 共 429 项，414 通过、15 项环境跳过，用时 117.571 秒；桌面 `-ValidateOnly`、10 个模块及 2 个辅助入口的 `--help`、PowerShell 语法和 README 本地链接检查通过。验证只使用模拟后台与临时文本，未运行模型、GPU、真实媒体或翻译服务。
+
 先按 README 建立 Python 3.12 x64 的 `.venv` 并运行 `-ValidateOnly`。主程序只用标准库；C 识别在单独的虚拟环境中安装。配置样例 `config/local.example.psd1` 可复制成被忽略的 `config/local.psd1`，只接受静态字符串，不写 Key、`$env` 或 PowerShell 表达式。
 
 桌面 Python 顺序为显式参数/本地配置、项目 `.venv`、兼容已有用户的 Codex 内置 Python、PATH。没有 Codex 内置运行时不影响显式 Python 或 `.venv` 使用。桌面的工具根可由参数/本地配置指定；CLI 不读取 `local.psd1`，用 `--tool-root` 或当前进程的 `TRANSLATION_FLOW_TOOL_ROOT`。Jasna 和 Gate 的进程环境设置优先于本地配置。不要把别人的个人目录写进新机器配置。
@@ -41,7 +45,7 @@
 | A 默认模型 | [whisper.cpp GGML 模型库](https://huggingface.co/ggerganov/whisper.cpp/tree/main)，非量化 `ggml-large-v3-turbo.bin`，约 1.51 GiB | `LLPlayer-v0.3.0/whispermodels/ggml-large-v3-turbo.bin` |
 | A 可选模型/旧任务 | 同一模型库，非量化 `ggml-large-v3.bin`，约 2.88 GiB | `LLPlayer-v0.3.0/whispermodels/ggml-large-v3.bin` |
 | 开头局部校时（可选） | 同版 Whisper 的 `whisper-vad-speech-segments.exe` 与 [Silero v6.2.0 GGML](https://huggingface.co/ggml-org/whisper-vad/tree/main) | 前者放 `whisper-cublas-12.4.0-bin-x64/Release/`，后者放 `whisper-vad/ggml-silero-v6.2.0.bin` |
-| C 识别环境 | faster-whisper 1.2.1 / CTranslate2 4.6.0，完整锁定列表见 `workflow/scripts/asr_fusion/requirements-faster-whisper.lock.txt` | `asr-lab/venvs/faster-whisper-1.2.1/Scripts/python.exe` |
+| C 识别环境 | faster-whisper 1.2.1 / CTranslate2 4.6.0，完整锁定列表见 `scripts/asr_fusion/requirements-faster-whisper.lock.txt` | `asr-lab/venvs/faster-whisper-1.2.1/Scripts/python.exe` |
 | C 模型 | [Systran large-v3 固定快照](https://huggingface.co/Systran/faster-whisper-large-v3/tree/edaa852ec7e145841d8ffdb056a99866b5f0a478)，由下面脚本下载并核对 | `asr-lab/models/faster-whisper-large-v3/`，含 model.bin、tokenizer/config/vocabulary 等文件 |
 | 画面处理 | [Jasna v0.10.0 Windows NVIDIA 包](https://github.com/Kruk2/jasna/releases/tag/v0.10.0)，完整解压到英文路径 | 默认 `jasna/jasna.exe`，或配置 `JasnaPath` |
 | 美颜播放（可选） | MediaPipe Tasks Vision 0.10.21 + FaceLandmarker float16 v1；下方安装命令 | `beauty-player/` |
@@ -57,7 +61,7 @@ NVIDIA 驱动须满足所选 CUDA 和 Jasna 包要求；AMD/CPU 画面路线不�
 ```powershell
 $Python = (Resolve-Path .\.venv\Scripts\python.exe).Path
 $Tools = Join-Path (Get-Location) 'workflow\tools'
-powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\workflow\scripts\asr_fusion\setup-dependencies.ps1 -BootstrapPython $Python -LabRoot (Join-Path $Tools 'asr-lab')
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\asr_fusion\setup-dependencies.ps1 -BootstrapPython $Python -LabRoot (Join-Path $Tools 'asr-lab')
 ```
 
 脚本固定 C 模型 revision 和 7 个文件的大小/SHA256，使用仓库里的完整 pip 锁定列表，并保留安装清单；不修改系统 PATH。`-SkipModel` 只跳过模型，仍会下载/安装 CUDA 等依赖。C 原环境为 Python 3.12；此轮没有在全新系统重装这批锁定依赖，不能把存在锁定文件当作新安装已通过。
@@ -113,7 +117,7 @@ API 服务替换成实际所选的 provider。`missing_paths` 列出必须补齐
 
 ## 1. 正式入口与运行模式
 
-根目录 `启动翻译流.cmd` 是唯一用户入口；`预览新版界面.cmd` 只转发到同一入口。
+根目录 `启动翻译流.cmd` 是唯一用户入口；`scripts/预览新版界面.cmd` 只转发到同一入口。其他命令行入口也集中在 `scripts/`。
 
 1. 点首页去马或翻译的“选择视频”，可多选；翻译入口兼容 SRT。美颜卡直接打开播放窗。
 2. 独立勾选所需功能，选择保存位置与 MKV/MP4。
@@ -143,8 +147,8 @@ API 服务替换成实际所选的 provider。`missing_paths` 列出必须补齐
 
 独立诊断入口：
 
-- `run-jasna-picture.cmd`：画面计划、预检和正式处理。
-- `run-final-mux.cmd`：只做最终薄封装。
+- `scripts/run-jasna-picture.cmd`：画面计划、预检和正式处理。
+- `scripts/run-final-mux.cmd`：只做最终薄封装。
 
 这些 CLI 用于短样、排错和模块验收；普通生产由桌面入口调用。
 
@@ -199,7 +203,7 @@ Agent 代为启动长任务时，应通过已有 Windows 桌面进程启动同�
 
 新入口 `python -m translation_flow.queue_cli --state-dir <固定本机队列目录>` 从 stdin 读取一个 UTF-8 JSON 对象，stdout 返回单个 `{ok, queue}` 或 `{ok:false, error}`。无 stdin 内容等价于查询状态。客户端按需启动独立后台进程；客户端退出不会停止已经接收的任务。目录应固定在用户可写的本机应用数据位置，窗口重开后复用；不要把其中的 `worker.json` 提交或分享。
 
-桌面调用 `Invoke-TranslationFlowQueue -PythonPath ... -WorkingDirectory ... -StateDirectory ... -Payload <hashtable>`，位于 `desktop/TranslationFlowQueueBridge.ps1`。调用返回 queue 对象，失败抛出可显示的中文错误；同步 RPC 由 `TranslationFlowQueueUi.ps1` 在后台 runspace 调用。原 `TranslationFlowProcessBridge.ps1` 与直接请求入口不变。关闭窗口只释放 UI 客户端，不发 `stop` 或 `shutdown`。
+桌面调用 `Invoke-TranslationFlowQueue -PythonPath ... -WorkingDirectory ... -StateDirectory ... -Payload <hashtable>`，位于 `src/desktop/TranslationFlowQueueBridge.ps1`。调用返回 queue 对象，失败抛出可显示的中文错误；同步 RPC 由 `TranslationFlowQueueUi.ps1` 在后台 runspace 调用。原 `TranslationFlowProcessBridge.ps1` 与直接请求入口不变。关闭窗口只释放 UI 客户端，不发 `stop` 或 `shutdown`。
 
 | action | 输入 | 行为 |
 |---|---|---|
@@ -417,9 +421,9 @@ Codex 不填 Key；A/C 退出、融合结构验证通过后，原有总流程开
 正式命令形态：
 
 ```powershell
-.\run-jasna-picture.cmd workflow-plan <参数>
-.\run-jasna-picture.cmd workflow-preflight <同一组参数>
-.\run-jasna-picture.cmd workflow-run <同一组参数> --confirm-gpu-ready --confirm-gate-viewed
+.\scripts\run-jasna-picture.cmd workflow-plan <参数>
+.\scripts\run-jasna-picture.cmd workflow-preflight <同一组参数>
+.\scripts\run-jasna-picture.cmd workflow-run <同一组参数> --confirm-gpu-ready --confirm-gate-viewed
 ```
 
 整片 `scope=full` 必须从源片开头处理，并消费一份与当前冻结路线匹配的 `scope=acceptance` 全局 Gate 报告。每部新源片的 30 分钟样片是可选质量检查，不是整片前置硬门；报告必须明确区分“路线已验收”与“当前源片已逐片验收”。具体参数以 `--help` 为准，不在文档复制机器路径。
@@ -443,8 +447,8 @@ Codex 不填 Key；A/C 退出、融合结构验证通过后，原有总流程开
 独立命令先 `plan`，确认后再 `run`：
 
 ```powershell
-.\run-final-mux.cmd plan <参数>
-.\run-final-mux.cmd run <同一组参数>
+.\scripts\run-final-mux.cmd plan <参数>
+.\scripts\run-final-mux.cmd run <同一组参数>
 ```
 
 完整生产由顶层自动读取画面正式报告，不允许调用者手猜时间映射。

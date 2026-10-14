@@ -9,7 +9,7 @@ from unittest.mock import Mock, patch
 
 from translation_flow.asr import AsrPipeline
 from translation_flow.media_input import check_media_input
-import test_asr_packaging as asr_fixtures
+from tests import test_asr_packaging as asr_fixtures
 
 
 def payload(format_name="matroska", video="hevc", audio="aac"):

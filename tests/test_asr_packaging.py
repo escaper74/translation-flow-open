@@ -9,8 +9,8 @@ from pathlib import Path
 from translation_flow.asr import AsrPipeline, ToolPaths, conservative_fuse
 from translation_flow.packaging import MkvSoftSubtitlePackager
 from translation_flow.srt import SubtitleCue, write_srt
-from workflow.scripts.clean_whisper_srt import Block, clean_blocks
-from workflow.scripts.asr_fusion.validate_asr_srt import (
+from scripts.clean_whisper_srt import Block, clean_blocks
+from scripts.asr_fusion.validate_asr_srt import (
     Block as StructureBlock,
     validate_blocks,
 )

@@ -17,6 +17,22 @@ ROOT = Path(__file__).resolve().parents[1]
 
 
 class InstallationPathTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Windows command entry")
+    def test_python_entry_from_another_directory_preserves_imports_and_exit_code(self):
+        env = dict(os.environ)
+        env.pop("PYTHONPATH", None)
+        env["TRANSLATION_FLOW_PYTHON"] = sys.executable
+        entry = ROOT / "scripts/python.cmd"
+        with tempfile.TemporaryDirectory(prefix="source entry ") as raw:
+            command = "from translation_flow.runtime import PROJECT_ROOT; print(PROJECT_ROOT)"
+            result = subprocess.run(["cmd.exe", "/d", "/c", str(entry), "-c", command],
+                                    cwd=raw, env=env, capture_output=True, text=True, timeout=15)
+            self.assertEqual(0, result.returncode, result.stderr)
+            self.assertEqual(ROOT, Path(result.stdout.strip()))
+            result = subprocess.run(["cmd.exe", "/d", "/c", str(entry), "-c", "raise SystemExit(17)"],
+                                    cwd=raw, env=env, capture_output=True, timeout=15)
+            self.assertEqual(17, result.returncode)
+
     def test_picture_experiment_requires_user_selected_paths(self):
         with contextlib.redirect_stderr(io.StringIO()), self.assertRaises(SystemExit):
             build_parser().parse_args(["plan"])
@@ -56,7 +72,7 @@ class InstallationPathTests(unittest.TestCase):
             explicit.touch()
             script = r'''
 $ErrorActionPreference='Stop'
-$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path (Get-Location) 'desktop/Start-TranslationFlow.ps1'),[ref]$null,[ref]$null)
+$ast=[Management.Automation.Language.Parser]::ParseFile((Join-Path (Get-Location) 'src/desktop/Start-TranslationFlow.ps1'),[ref]$null,[ref]$null)
 $node=$ast.Find({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst] -and $n.Name -eq 'Resolve-TranslationPython'},$true)
 Invoke-Expression $node.Extent.Text
 $PythonPathBox=@{Text=''}
@@ -72,7 +88,7 @@ $second=Resolve-TranslationPython
     def test_installer_defaults_are_portable_without_running_installation(self):
         script = r'''
 $ErrorActionPreference='Stop'
-$file=Join-Path (Get-Location) 'workflow/scripts/asr_fusion/setup-dependencies.ps1'
+$file=Join-Path (Get-Location) 'scripts/asr_fusion/setup-dependencies.ps1'
 $fixtureScriptRoot=Split-Path -Parent $file
 $text=[IO.File]::ReadAllText($file)
 # Only parameter/default path setup; do not evaluate installation or download code.

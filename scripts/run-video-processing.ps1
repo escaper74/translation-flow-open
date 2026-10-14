@@ -19,7 +19,7 @@ param(
 )
 
 $ErrorActionPreference = "Stop"
-$RepoRoot = $PSScriptRoot
+$RepoRoot = Split-Path -Parent $PSScriptRoot
 $Utf8NoBom = New-Object System.Text.UTF8Encoding($false)
 [Console]::OutputEncoding = $Utf8NoBom
 [Console]::InputEncoding = $Utf8NoBom
@@ -58,11 +58,14 @@ if ($JobDir) {
     $Arguments += @("--job-dir", $JobDir)
 }
 
+$previousPythonPath = $env:PYTHONPATH
+$env:PYTHONPATH = (Join-Path $RepoRoot "src") + [IO.Path]::PathSeparator + $previousPythonPath
 Push-Location $RepoRoot
 try {
     & $Python @Arguments
     exit $LASTEXITCODE
 }
 finally {
+    $env:PYTHONPATH = $previousPythonPath
     Pop-Location
 }

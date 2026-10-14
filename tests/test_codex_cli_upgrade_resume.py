@@ -16,7 +16,7 @@ from translation_flow.translation.codex_provider import (
 from translation_flow.translation.pipeline import run_translation
 from translation_flow.translation.provider import FatalProviderError
 from translation_flow.translation.codex_provider import CodexLoginRequired
-from test_codex_integration import FakeCodex
+from tests.test_codex_integration import FakeCodex
 
 
 def audit(path: Path, version: str, timestamp: int) -> None:

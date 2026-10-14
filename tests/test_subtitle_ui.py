@@ -9,10 +9,10 @@ import tempfile
 import unittest
 
 from translation_flow.translation.api_providers import API_PROVIDERS, ENDPOINTS
-from test_srt_codex_cli import FIXTURE
+from tests.test_srt_codex_cli import FIXTURE
 
 ROOT = Path(__file__).resolve().parents[1]
-UI = ROOT / "desktop" / "Start-TranslationFlow.ps1"
+UI = ROOT / "src/desktop" / "Start-TranslationFlow.ps1"
 
 
 @unittest.skipUnless(os.name == "nt", "Windows desktop integration")
@@ -27,7 +27,7 @@ class SubtitleUiTests(unittest.TestCase):
 
     def test_api_failure_guidance_does_not_misidentify_provider(self):
         values = self.powershell("-Command",
-            f". '{ROOT / 'desktop' / 'TranslationFlowUiSummary.ps1'}';"
+            f". '{ROOT / 'src/desktop' / 'TranslationFlowUiSummary.ps1'}';"
             "@((Get-UiFailureGuidance 'qwen rate_limit_exceeded' 'translation' 'translation'),"
             "(Get-UiFailureGuidance 'Missing API key' 'translation' 'translation'))|ConvertTo-Json -Compress")
         self.assertNotIn("Codex", json.dumps(values, ensure_ascii=False))
@@ -54,7 +54,7 @@ class SubtitleUiTests(unittest.TestCase):
                 requests.append(str(request))
             script = root / "probe.ps1"
             script.write_text(
-                f". '{ROOT / 'desktop' / 'TranslationFlowTaskCenter.ps1'}'\n"
+                f". '{ROOT / 'src/desktop' / 'TranslationFlowTaskCenter.ps1'}'\n"
                 "$paths=@(" + ",".join("'" + p + "'" for p in requests) + ")\n"
                 "$values=@(foreach($path in $paths){$resume=Get-TaskCenterResumeRequest $path;"
                 "[void](Request-TranslationFlowCancellation $path);$resume});"

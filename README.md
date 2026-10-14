@@ -61,13 +61,13 @@ Copy-Item .\config\local.example.psd1 .\config\local.psd1
 
 ```powershell
 # 检查桌面能否加载
-powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\desktop\Start-TranslationFlow.ps1 -ValidateOnly
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\src\desktop\Start-TranslationFlow.ps1 -ValidateOnly
 
 # 检查字幕翻译所需的本地路径
-.\.venv\Scripts\python.exe -m translation_flow.diagnostics --mode srt --provider deepseek
+.\scripts\python.cmd -m translation_flow.diagnostics --mode srt --provider deepseek
 
 # 检查视频组件
-.\.venv\Scripts\python.exe -m translation_flow.diagnostics --mode video --provider codex
+.\scripts\python.cmd -m translation_flow.diagnostics --mode video --provider codex
 ```
 
 选择 large-v3 时，在视频检查命令后加上 `--asr-a-model large-v3`。`missing_paths` 会列出缺少的文件。这些命令不运行模型或翻译；路径检查通过后，仍需在开始任务时确认服务和运行环境可用。
@@ -111,8 +111,7 @@ Jasna 首次使用需要为本机显卡生成引擎，并完成样片检查。�
 在源码目录运行测试：
 
 ```powershell
-python -m unittest discover -s tests -q
-python -m unittest discover -s tests_jasna_picture -q
+.\scripts\python.cmd -m unittest discover -s tests -t . -q
 ```
 
 部分集成测试需要相应的本地工具。现有测试环境和样片记录见运行手册。

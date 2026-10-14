@@ -16,7 +16,7 @@ import threading
 import time
 from typing import Any
 
-ROOT = Path(__file__).resolve().parents[1]
+ROOT = Path(__file__).resolve().parents[2]
 MODULES = {
     "translation": ("translation_flow.cli", ".translation-flow", "job.result.json"),
     "srt_translation": ("translation_flow.srt_desktop", ".srt-translation", "job.result.json"),

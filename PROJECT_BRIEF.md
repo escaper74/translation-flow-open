@@ -2,6 +2,12 @@
 
 > 本文件是统一的项目架构与技术路线说明，可直接用于外部架构讨论。影片编号、字幕文本、任务 ID、本机媒体路径和密钥信息不进入本文。
 
+### 源码目录（2026-10-14）
+
+对外源码按用途收在五个目录：`src/` 保存桌面与 Python 模块，`scripts/` 保存安装及命令行脚本，`tests/` 保存全部离线测试（画面测试在 `tests/picture/`），`config/` 保存配置样例，`docs/` 保存展示图片。根目录的 `启动翻译流.cmd` 仍是用户入口。
+
+Python 模块名保持不变。桌面入口和 `scripts/python.cmd` 为子进程配置当前源码的 `src` 路径；本机配置、工具、输出和队列仍按仓库根目录定位，工具默认放在被忽略的 `workflow/tools/`。此目录整理应用于私有开源审阅版本，未部署到本机冻结版本。
+
 ### 当前冻结基线（2026-10-04）
 
 用户已认可当前版本，并授权 00 固化为本地标签 `v1-desktop-accepted-20261004`。本次包含正式桌面的 Turbo 默认/large-v3 可选、开头局部校时、阶段计时、成品清理入口及对应回归；不新增功能、不重跑真实媒体，也不追溯改写旧任务结果。下文各日期的“尚未提交/尚未合入”描述仅代表当时状态；当前交付以此冻结标签及正式入口为准。
@@ -26,7 +32,7 @@
 - 每张视频成品卡的播放按钮下方提供“清理中间文件”，仅列该任务的大媒体检查点和逻辑大小。用户看过成片并确认精确路径、数量后才能永久删除；所有完整成片版本、源片、字幕、缓存和日志都保留。清理记录独立落盘，任务中心不再对已清理检查点的任务承诺原地恢复。不是自动删除，也不清理任意外部 ASR 临时目录。
 - “字幕校对”并列日文参考和可编辑中文，点击行可定位内置播放器；视频播放依赖本机 Windows 解码支持。另存人工修订 SRT，不覆盖自动原稿；可用原成片视频/音轨 stream-copy 导出新的人工修订 MKV。多字幕轨或非中文轨不自动替换，独立 SRT 可只保存修订。
 - 正式后台队列在成功或失败终态请求 Windows 通知，不包含影片名、路径或字幕。关窗后后台仍可发送；Windows 通知设置决定是否显示。通知失败不改变任务结果。
-- 对应代码为 `translation_flow/library.py`、`desktop/TranslationFlowLibrary.ps1`、两个配套 XAML 和 `translation_flow/notifications.py`；不改识别、翻译模型、画面算法或既有缓存身份。
+- 对应代码为 `src/translation_flow/library.py`、`src/desktop/TranslationFlowLibrary.ps1`、两个配套 XAML 和 `src/translation_flow/notifications.py`；不改识别、翻译模型、画面算法或既有缓存身份。
 - 实时美颜作为独立播放层接入“首页 → 美颜”和“成品 → 美颜播放”，不混入翻译/画面生产任务。独立视频窗内的“美颜”打开可单独移动的小工具窗；关闭工具窗不停止播放、不清空强度，重开继续调节，关闭视频窗时工具窗一起关闭。磨皮、美白、瘦脸、大眼可边看边调或暂停调节；只改变观看画面，不覆盖原片、不生成整部美颜副本。短片预览/前后对比生产功能仍不做。
 - A 版主窗口使用白底与青绿，首页三卡、任务进度卡和内嵌成品卡统一导航；服务、风格和格式以直接选项呈现。任务操作沿用原队列；成品保留播放、版本切换、字幕校对和精确清理确认。缩略图由本机 Windows Shell 异步读取，失败时显示插图，不阻塞界面。用户已确认前端验证完成并批准部署；2026-09-24 的实现提交 `e93a4c1` 已合入正式主目录的 `main`，入口仍为 `启动翻译流.cmd`。主目录回归 352 项中 337 通过、15 项环境跳过，画面独立回归 33 项通过；此次没有更改后端算法或运行真实影片。
 
@@ -39,7 +45,7 @@
 - 浏览器支持的 MP4 直接读源；常见 MKV 经 FFmpeg stream-copy 到内存管道播放，跳转以探测的真实关键帧为锚点，同步字幕和进度。
 - 浏览器无法解码 HEVC 时，改用 FFmpeg CPU 实时生成 H.264 观看流（最高 1080p，音轨仍 copy），不保存视频副本。兼容播放会占用额外 CPU；它不是正式转码产物或美颜导出。
 - 渲染最多 1080p/两张脸；未检测到稳定人脸显示原画，明显侧脸关闭瘦脸/大眼形变。中文字幕为单独显示层，不被拉伸；第一版播放第一条音轨、首选内嵌中文文本字幕，不做外挂字幕、多音轨选择、HDR 校色或导出。
-- 独立 Edge 短片测试已覆盖 H.264/MP4、H.264/MKV 和 HEVC 兼容播放，真实加载模型，检查各滑块像素变化、关闭恢复原画、暂停、跳转和字幕开关。测试素材是公开人像生成的短片；静态人像测试不证明复杂运动/遮挡/多人镜头的美颜观感，也不代表用户观看验收。运行组件约 22 MiB，置于被 Git 忽略的工具目录；第三方来源及声明见 `beauty_player/THIRD_PARTY.txt`。
+- 独立 Edge 短片测试已覆盖 H.264/MP4、H.264/MKV 和 HEVC 兼容播放，真实加载模型，检查各滑块像素变化、关闭恢复原画、暂停、跳转和字幕开关。测试素材是公开人像生成的短片；静态人像测试不证明复杂运动/遮挡/多人镜头的美颜观感，也不代表用户观看验收。运行组件约 22 MiB，置于被 Git 忽略的工具目录；第三方来源及声明见 `src/beauty_player/THIRD_PARTY.txt`。
 - 播放 UI 使用奶白、浅紫和葡萄紫；正常状态只显示“实时生效”，不显示人脸数、跟踪或帧率。工具窗为同源独立 popup，播放窗持有本次强度、校验消息来源并同步；弹窗被浏览器策略拦截时明确提示，不退回固定侧栏。视频随窗口自适应，也可只缩放画面（50%–200%），不缩放字幕、播放控件或工具栏；全屏保留播放控制。工具窗不是系统置顶窗口，实际系统窗口管理仍由 Edge/Windows 决定。
 
 ## 1. 目标与完成标准
@@ -140,16 +146,16 @@ sequenceDiagram
 
 | 模块 | 唯一职责 | 首要代码入口 | 正式交付 |
 |---|---|---|---|
-| 桌面 UI | 构造请求、取得当次授权、启动白名单后端、显示 JSONL 进度/运行摘要/本地任务中心 | `desktop/Start-TranslationFlow.ps1`、`desktop/TranslationFlowProcessBridge.ps1`、`desktop/TranslationFlowUiSummary.ps1`、`desktop/TranslationFlowTaskCenter.ps1` | 请求和用户可见状态；不拥有媒体算法 |
-| `translation_flow` | A/C 识别、保守融合、外部翻译、字幕验证和原画封装 | `translation_flow/cli.py`、`translation_flow/runner.py` | 中文 SRT、字幕检查表、原画字幕 MKV、翻译报告 |
-| `full_workflow.picture_cli` | 仅去马编排与可播放成品交付，不启动翻译 | `full_workflow/picture.py` | 去马 MKV/MP4、原声音、已有字幕和正式报告 |
-| `jasna_picture` | 视频分段、Jasna 处理、段级验证、拼接和真实接缝测量 | `jasna_picture/cli.py`、`jasna_picture/workflow.py` | video-only MKV、画面报告 |
-| `final_mux` | 按画面报告映射字幕和原音轨，一次性生成最终成片 | `final_mux/cli.py`、`final_mux/workflow.py` | 最终 MKV、封装报告 |
-| `full_workflow` | 组织 A+C 后双分支、恢复、失败隔离和最终状态 | `full_workflow/cli.py`、`full_workflow/runner.py` | 顶层 manifest/result；不复制各模块算法 |
-| `media_planning` | 按 FFprobe 实际流信息规划并执行已有中文字幕影片重封装 | `media_planning/cli.py`、`media_planning/runner.py` | MKV/MP4 软字幕版、技术报告 |
+| 桌面 UI | 构造请求、取得当次授权、启动白名单后端、显示 JSONL 进度/运行摘要/本地任务中心 | `src/desktop/Start-TranslationFlow.ps1`、`src/desktop/TranslationFlowProcessBridge.ps1`、`src/desktop/TranslationFlowUiSummary.ps1`、`src/desktop/TranslationFlowTaskCenter.ps1` | 请求和用户可见状态；不拥有媒体算法 |
+| `translation_flow` | A/C 识别、保守融合、外部翻译、字幕验证和原画封装 | `src/translation_flow/cli.py`、`src/translation_flow/runner.py` | 中文 SRT、字幕检查表、原画字幕 MKV、翻译报告 |
+| `full_workflow.picture_cli` | 仅去马编排与可播放成品交付，不启动翻译 | `src/full_workflow/picture.py` | 去马 MKV/MP4、原声音、已有字幕和正式报告 |
+| `jasna_picture` | 视频分段、Jasna 处理、段级验证、拼接和真实接缝测量 | `src/jasna_picture/cli.py`、`src/jasna_picture/workflow.py` | video-only MKV、画面报告 |
+| `final_mux` | 按画面报告映射字幕和原音轨，一次性生成最终成片 | `src/final_mux/cli.py`、`src/final_mux/workflow.py` | 最终 MKV、封装报告 |
+| `full_workflow` | 组织 A+C 后双分支、恢复、失败隔离和最终状态 | `src/full_workflow/cli.py`、`src/full_workflow/runner.py` | 顶层 manifest/result；不复制各模块算法 |
+| `media_planning` | 按 FFprobe 实际流信息规划并执行已有中文字幕影片重封装 | `src/media_planning/cli.py`、`src/media_planning/runner.py` | MKV/MP4 软字幕版、技术报告 |
 | `video_pipeline` | 保留早期画面路线代码，并提供少量共享工具定位能力 | 当前没有桌面正式运行模式 | 不应与 `jasna_picture` 混称为现役画面主线 |
 | `workflow/tools` | 保存本机固定工具链 | 各 runner 通过正式配置定位 | FFmpeg、Whisper、Jasna 等本地可执行文件和模型资产 |
-| 测试 | 离线契约、真实短媒体和画面独立回归 | `tests/`、`tests_jasna_picture/` | 能证明具体行为的回归证据 |
+| 测试 | 离线契约、真实短媒体和画面独立回归 | `tests/`、`tests/picture/` | 能证明具体行为的回归证据 |
 
 运行数据不写回代码目录：翻译、完整工作流和重新封装分别在输出目录的 `.translation-flow/<job-id>`、`.full-workflow/<job-id>`、`.media-repackage/<job-id>` 留下请求、事件、检查点和报告。正式大媒体产物与这些小型证据分开保存。
 
@@ -157,7 +163,7 @@ sequenceDiagram
 
 - `full_workflow` 是调度器，不是第四套翻译或媒体算法。
 - `final_mux` 负责“处理后画面 + 原音轨 + 正式 SRT”的最终汇合；`media_planning` 负责“已有中文字幕影片”的容器重封装，两者不是同一路线。
-- `video_pipeline` 含历史路线和共享工具定位代码；当前正式画面生产只走 `jasna_picture`，不要把 `run-video-processing.ps1` 当成第二条现役入口。
+- `video_pipeline` 含历史路线和共享工具定位代码；当前正式画面生产只走 `jasna_picture`，不要把 `scripts/run-video-processing.ps1` 当成第二条现役入口。
 - A+C 的 A 是完整条目和时间轴主体，C 常规只提供保守文本候选；新任务在融合交接前可用 C 与本地 VAD 证据校正明确异常的开头前缀，保留原始 A，正文和其余时间不变。C 的数量更多不等于应该替换更多。
 - 画面分段是恢复和接缝证据，不是自动提速机制。
 - `technical_checks_passed` 只表示机器检查通过；`human-review.json` 才记录用户观看结论。
@@ -444,7 +450,7 @@ FFprobe 读取容器与实际 streams
 独立 SRT 的 Codex 模式使用 `--provider codex` 和匹配的当次字幕授权，不需要 API Key，只接受 `cli-default` 模型策略。直接翻译已有 SRT，保留 ID/时间码，疑点另入报告；没有 A/C 输入时不声称完成了视频源文审查。Ctrl+C 同时通知固定两路停止，成功批次可恢复，API 的已有默认和缓存身份保留。该入口最初新增 7 项离线测试，代码已纳入冻结基线；当时没有新真实调用。可执行小样及恢复方法见 `WORKFLOW.md` 3.1.1。
 
 - DeepSeek 继续原适配器、默认模型、参数和缓存身份；其他五家必须明确指定模型 ID，不自动换模型或服务商。
-- Qwen/Kimi/Gemini 使用 Chat Completions 文本协议；OpenAI 使用 Responses（`store=false`）；Anthropic 使用 Messages。适配代码在 `translation_flow/translation/api_providers.py`，不增加 SDK 依赖。
+- Qwen/Kimi/Gemini 使用 Chat Completions 文本协议；OpenAI 使用 Responses（`store=false`）；Anthropic 使用 Messages。适配代码在 `src/translation_flow/translation/api_providers.py`，不增加 SDK 依赖。
 - 新 API 保持模型默认采样/思考设置，不把 DeepSeek 专有参数套给别家。仅输出 token 上限可配置；现有翻译 prompt 不变。拒绝、截断、异常结束或无正文不能当成完整译文。
 - API Key 仅从本次进程环境取得；调用目的地为命名的官方端点，授权必须匹配所选服务商。缓存按服务商、端点、模型、输出上限及既有翻译选项隔离，Key 不参与缓存身份。
 - 离线伪 HTTP 已覆盖六家协议、完整字幕阶段、阶段屏障、失败后补缺失批、缓存复用及敏感值不落盘；没有调用新增服务、外发真实字幕或证明模型翻译质量。Gemini 兼容端点仍为 beta，具体模型的输出上限等参数仍须真实小样核对。
@@ -479,7 +485,7 @@ SRT/视频/完整流程 CLI 的 Ctrl+C 和视频任务的 `cancel.requested` 已
 
 ### 通用任务队列与后台运行（08 后端；09 已接界面）
 
-用户已收敛本轮新增范围为停止保留进度、顺序批量队列和关闭窗口后的后台运行。`translation_flow.task_queue`、`translation_flow.queue_cli` 与独立 `desktop/TranslationFlowQueueBridge.ps1` 实现该通用调度层，接受现有视频字幕、SRT 翻译、本地重封装正式请求；不改变请求身份、翻译缓存命名或原有四模块进程桥。
+用户已收敛本轮新增范围为停止保留进度、顺序批量队列和关闭窗口后的后台运行。`translation_flow.task_queue`、`translation_flow.queue_cli` 与独立 `src/desktop/TranslationFlowQueueBridge.ps1` 实现该通用调度层，接受现有视频字幕、SRT 翻译、本地重封装正式请求；不改变请求身份、翻译缓存命名或原有四模块进程桥。
 
 后台进程独立于窗口存活，只顺序启动任务；重复入队不重复运行，失败项保留且不挡后续项。状态只记录调度和正式结果引用，成功仍须当前运行的完成事件、通过的正式报告及实际产物。窗口重连读取同一队列，不猜测或重建任务结果。取消按现有检查点边界执行；本地重封装在完整 mux 前可以停止，mux 开始后连同验证与发布作为一个安全步骤完成。
 
@@ -524,4 +530,4 @@ SRT/视频/完整流程 CLI 的 Ctrl+C 和视频任务的 `cancel.requested` 已
 
 用户已于 2026-10-04 确认采用 Apache-2.0，接受他人在遵守许可证的前提下商用及闭源修改。完整条款见根级 `LICENSE`，授权范围包括本项目代码、文档及自行生成的首页插图；已有第三方版权和修改声明继续保留。外部 Jasna、FFmpeg、NVIDIA 组件和模型的许可仍需分别满足，不能用项目许可证覆盖。
 
-首页插图 `desktop/assets/feature-art.png` 的来源及公开使用已由用户确认，记录在 `THIRD_PARTY_NOTICES.txt`。对外源码包仅从准备分支的已提交当前树导出，不包含 `.git`、本机配置、凭据、工具、模型及用户媒体。开发历史原样保留；其中的历史凭据仍需账号持有人确认作废，源码快照不代表凭据已失效。03 保留不含秘密值的本地定位报告；主目录整合及实际对外发布继续由 00 和用户决定。
+首页插图 `src/desktop/assets/feature-art.png` 的来源及公开使用已由用户确认，记录在 `THIRD_PARTY_NOTICES.txt`。对外源码包仅从准备分支的已提交当前树导出，不包含 `.git`、本机配置、凭据、工具、模型及用户媒体。开发历史原样保留；其中的历史凭据仍需账号持有人确认作废，源码快照不代表凭据已失效。03 保留不含秘密值的本地定位报告；主目录整合及实际对外发布继续由 00 和用户决定。

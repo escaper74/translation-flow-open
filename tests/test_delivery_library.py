@@ -161,7 +161,7 @@ class LibraryTests(unittest.TestCase):
         script=f"""
         $ErrorActionPreference='Stop'
         Add-Type -AssemblyName PresentationFramework
-        . '{root}/desktop/TranslationFlowLibrary.ps1'
+        . '{root}/src/desktop/TranslationFlowLibrary.ps1'
         foreach($name in @('TranslationFlowLibrary.xaml','TranslationFlowReview.xaml')){{
           $w=New-LibraryWindow $name $null
           $w.Close()
@@ -184,7 +184,7 @@ class LibraryTests(unittest.TestCase):
         $ErrorActionPreference='Stop'
         Add-Type -AssemblyName PresentationFramework
         Add-Type -AssemblyName System.Windows.Forms
-        . '{root}/desktop/TranslationFlowLibrary.ps1'
+        . '{root}/src/desktop/TranslationFlowLibrary.ps1'
         $global:ProjectRoot='{root}'
         $global:PythonPathBox=New-Object Windows.Controls.TextBox
         $global:PythonPathBox.Text='{sys.executable}'

@@ -413,7 +413,7 @@ class BackgroundQueueIntegrationTests(unittest.TestCase):
                 self.wait_for(lambda: process_stamp(pid) is None)
 
     def test_production_worker_reuses_formal_srt_without_api_key(self):
-        import test_srt_desktop as desktop_fixture
+        from tests import test_srt_desktop as desktop_fixture
         source_root = self.root / "cached subtitle"
         source_root.mkdir()
         helper = desktop_fixture.SrtDesktopTests()
@@ -474,7 +474,7 @@ class BackgroundQueueIntegrationTests(unittest.TestCase):
         script.write_text(
             "$ErrorActionPreference='Stop'\n[Console]::OutputEncoding=New-Object System.Text.UTF8Encoding($false)\n"
             + ("[Console]::InputEncoding=New-Object System.Text.UTF8Encoding($true)\n" if utf8_console else "")
-            + f". '{ROOT / 'desktop/TranslationFlowQueueBridge.ps1'}'\n"
+            + f". '{ROOT / 'src/desktop/TranslationFlowQueueBridge.ps1'}'\n"
             f"try {{ $q=Invoke-TranslationFlowQueue -PythonPath '{sys.executable}' -WorkingDirectory '{ROOT}' "
             f"-StateDirectory '{self.state}' -Payload @{{action='status'}}\n"
             "} catch { [Console]::Error.WriteLine($_.ScriptStackTrace); throw }\n"

@@ -11,8 +11,8 @@ import sys
 from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
-sys.path[:0] = [str(ROOT), str(ROOT / 'tests')]
-from test_codex_integration import FakeAsr, FakeCodex
+sys.path[:0] = [str(ROOT / 'src'), str(ROOT), str(ROOT / 'tests')]
+from tests.test_codex_integration import FakeAsr, FakeCodex
 from translation_flow.runner import TranslationFlowRunner
 from translation_flow.task_queue import request_info
 from translation_flow.queue_cli import run_request

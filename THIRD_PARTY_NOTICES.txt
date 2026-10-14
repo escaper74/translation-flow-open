@@ -11,13 +11,13 @@ CODE / ASSETS INCLUDED IN THIS SOURCE TREE
 GPUPixel (PixPark), Apache-2.0
   https://github.com/pixpark/gpupixel
   https://github.com/pixpark/gpupixel/blob/main/LICENSE
-  Adapted coordinate deformation functions: beauty_player/web/renderer.js.
-  Copyright and modification statement: beauty_player/THIRD_PARTY.txt.
-  License copy: beauty_player/licenses/Apache-2.0.txt.
+  Adapted coordinate deformation functions: src/beauty_player/web/renderer.js.
+  Copyright and modification statement: src/beauty_player/THIRD_PARTY.txt.
+  License copy: src/beauty_player/licenses/Apache-2.0.txt.
   This is not the full GPUPixel engine. The adaptation's upstream commit was not
   recorded; preserve the existing attribution and confirm provenance at release.
 
-Desktop artwork: desktop/assets/feature-art.png
+Desktop artwork: src/desktop/assets/feature-art.png
   Project-generated artwork, added in source commit e93a4c1. On 2026-10-04 the
   project owner confirmed its origin and approved its inclusion under this
   project's Apache-2.0 license. The original image is included unchanged.

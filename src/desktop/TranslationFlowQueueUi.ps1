@@ -2,7 +2,7 @@
 Set-StrictMode -Version Latest
 
 function Initialize-QueueUi {
-    $script:QueueEnabled = [IO.File]::Exists((Join-Path $ProjectRoot 'translation_flow/queue_cli.py'))
+    $script:QueueEnabled = [IO.File]::Exists((Join-Path $ProjectRoot 'src/translation_flow/queue_cli.py'))
     $script:QueueCall = $null
     $script:QueueSnapshot = $null
     $script:CurrentQueueId = ''

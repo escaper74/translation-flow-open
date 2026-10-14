@@ -9,7 +9,7 @@ $ErrorActionPreference = "Stop"
 
 if (-not $LabRoot) {
     $DependencyRoot = $env:TRANSLATION_FLOW_TOOL_ROOT
-    if (-not $DependencyRoot) { $DependencyRoot = Join-Path $PSScriptRoot "..\..\tools" }
+    if (-not $DependencyRoot) { $DependencyRoot = Join-Path $PSScriptRoot "..\..\workflow\tools" }
     $LabRoot = [IO.Path]::GetFullPath((Join-Path $DependencyRoot "asr-lab"))
 }
 
@@ -42,7 +42,7 @@ function Resolve-Python {
         }
         return (Resolve-Path -LiteralPath $Requested).Path
     }
-    $ProjectPython = Join-Path $PSScriptRoot "..\..\..\.venv\Scripts\python.exe"
+    $ProjectPython = Join-Path $PSScriptRoot "..\..\.venv\Scripts\python.exe"
     if (Test-Path -LiteralPath $ProjectPython -PathType Leaf) { return (Resolve-Path -LiteralPath $ProjectPython).Path }
     $Bundled = Join-Path $env:USERPROFILE ".cache\codex-runtimes\codex-primary-runtime\dependencies\python\python.exe"
     if (Test-Path -LiteralPath $Bundled -PathType Leaf) { return $Bundled }

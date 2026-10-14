@@ -146,7 +146,7 @@ class ToolPaths:
             raise ValueError("unsupported Whisper A model")
         tool_root = Path(tool_root)
         faster_root = Path(faster_root)
-        repo_root = Path(__file__).resolve().parents[1]
+        repo_root = Path(__file__).resolve().parents[2]
         site_packages = (
             faster_root
             / "venvs"
@@ -183,16 +183,14 @@ class ToolPaths:
             vad_cli=tool_root / "whisper-cublas-12.4.0-bin-x64" / "Release" / "whisper-vad-speech-segments.exe",
             vad_model=tool_root / "whisper-vad" / "ggml-silero-v6.2.0.bin",
             faster_model=faster_root / "models" / "faster-whisper-large-v3",
-            transcribe_a=repo_root / "workflow" / "scripts" / "transcribe_whisper_chunked.py",
-            clean_srt=repo_root / "workflow" / "scripts" / "clean_whisper_srt.py",
-            validate_quality=repo_root / "workflow" / "scripts" / "validate_srt_quality.py",
+            transcribe_a=repo_root / "scripts" / "transcribe_whisper_chunked.py",
+            clean_srt=repo_root / "scripts" / "clean_whisper_srt.py",
+            validate_quality=repo_root / "scripts" / "validate_srt_quality.py",
             transcribe_c=repo_root
-            / "workflow"
             / "scripts"
             / "asr_fusion"
             / "transcribe_faster_whisper.py",
             validate_structure=repo_root
-            / "workflow"
             / "scripts"
             / "asr_fusion"
             / "validate_asr_srt.py",

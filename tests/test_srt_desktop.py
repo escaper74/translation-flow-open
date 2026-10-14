@@ -13,7 +13,7 @@ from translation_flow.translation.api_providers import (
     API_PROVIDERS, DEFAULT_ENDPOINTS, api_cache_identity, resolve_endpoint,
 )
 from urllib.parse import urlsplit
-from test_srt_codex_cli import FakeCodex, FIXTURE
+from tests.test_srt_codex_cli import FakeCodex, FIXTURE
 
 
 class SrtDesktopTests(unittest.TestCase):

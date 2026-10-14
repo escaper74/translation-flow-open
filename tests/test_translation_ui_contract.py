@@ -11,20 +11,20 @@ from pathlib import Path
 
 
 ROOT = Path(__file__).resolve().parents[1]
-UI = ROOT / "desktop" / "Start-TranslationFlow.ps1"
-BRIDGE = ROOT / "desktop" / "TranslationFlowProcessBridge.ps1"
-SUMMARY = ROOT / "desktop" / "TranslationFlowUiSummary.ps1"
-TASK_CENTER = ROOT / "desktop" / "TranslationFlowTaskCenter.ps1"
-PROVIDERS = ROOT / "desktop" / "TranslationFlowProvider.ps1"
+UI = ROOT / "src/desktop" / "Start-TranslationFlow.ps1"
+BRIDGE = ROOT / "src/desktop" / "TranslationFlowProcessBridge.ps1"
+SUMMARY = ROOT / "src/desktop" / "TranslationFlowUiSummary.ps1"
+TASK_CENTER = ROOT / "src/desktop" / "TranslationFlowTaskCenter.ps1"
+PROVIDERS = ROOT / "src/desktop" / "TranslationFlowProvider.ps1"
 LAUNCHER = ROOT / "启动翻译流.cmd"
-OLD_PREVIEW = ROOT / "预览新版界面.cmd"
-CLI = ROOT / "translation_flow" / "cli.py"
+OLD_PREVIEW = ROOT / "scripts/预览新版界面.cmd"
+CLI = ROOT / "src/translation_flow" / "cli.py"
 
 
 class FormalTranslationUiContractTests(unittest.TestCase):
     @classmethod
     def setUpClass(cls) -> None:
-        cls.ui_text = UI.read_text(encoding="utf-8") + (ROOT / "desktop" / "TranslationFlowView.xaml").read_text(encoding="utf-8")
+        cls.ui_text = UI.read_text(encoding="utf-8") + (ROOT / "src/desktop" / "TranslationFlowView.xaml").read_text(encoding="utf-8")
         cls.bridge_text = BRIDGE.read_text(encoding="utf-8")
         cls.summary_text = SUMMARY.read_text(encoding="utf-8")
         cls.task_center_text = TASK_CENTER.read_text(encoding="utf-8")
@@ -288,7 +288,7 @@ class FormalTranslationUiContractTests(unittest.TestCase):
             with self.subTest(fragment=fragment):
                 self.assertIn(fragment, self.ui_text)
         self.assertIn('"media_planning.cli"', self.bridge_text)
-        controls = ET.parse(ROOT / 'desktop' / 'TranslationFlowView.xaml').iter()
+        controls = ET.parse(ROOT / 'src/desktop' / 'TranslationFlowView.xaml').iter()
         output_format = next(node for node in controls if node.get('{http://schemas.microsoft.com/winfx/2006/xaml}Name') == 'OutputFormatBox')
         self.assertEqual('0', output_format.get('SelectedIndex'))
         media_start = self.ui_text.index('$recordRoot = ".media-repackage"')

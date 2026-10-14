@@ -256,7 +256,7 @@ def create_server(playback):
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--media", required=True, type=Path)
-    parser.add_argument("--tool-root", type=Path, default=Path(__file__).resolve().parents[1] / "workflow/tools")
+    parser.add_argument("--tool-root", type=Path, default=Path(__file__).resolve().parents[2] / "workflow/tools")
     parser.add_argument("--runtime", type=Path, default=DEFAULT)
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()

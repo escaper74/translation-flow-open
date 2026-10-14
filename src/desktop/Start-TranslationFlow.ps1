@@ -12,8 +12,11 @@ Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $script:CurrentWhisperAModel = $WhisperAModel
 if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
-    $ProjectRoot = Split-Path -Parent (Split-Path -Parent $MyInvocation.MyCommand.Path)
+    $ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 }
+
+$sourceRoot = Join-Path $ProjectRoot "src"
+$env:PYTHONPATH = $sourceRoot + [IO.Path]::PathSeparator + $env:PYTHONPATH
 
 # Machine-specific paths stay in the already ignored local data file.
 $localRuntimePath = Join-Path $ProjectRoot "config/local.psd1"

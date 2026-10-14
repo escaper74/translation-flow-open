@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import patch
 import wave
 
-import test_asr_packaging as fixtures
+from tests import test_asr_packaging as fixtures
 from translation_flow.asr import AsrPipeline, conservative_fuse, load_completed_asr
 from translation_flow.opening_timing import OPENING_TIMING_POLICY
 from translation_flow.srt import SubtitleCue as Cue, parse_srt, validate_timeline, write_srt
