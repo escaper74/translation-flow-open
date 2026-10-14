@@ -22,6 +22,11 @@ Desktop artwork: desktop/assets/feature-art.png
   project owner confirmed its origin and approved its inclusion under this
   project's Apache-2.0 license. The original image is included unchanged.
 
+Application screenshot: docs/images/home.png
+  Screenshot of this project's desktop home screen, showing an empty task list.
+  Includes the project-generated artwork identified above and is covered by
+  the project's Apache-2.0 license. The captured image is included unchanged.
+
 Tests/fixtures
   The current subtitle/media tests describe generated or manually written
   ordinary fixtures; no downloaded feature film is present in the current tree.

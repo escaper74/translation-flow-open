@@ -1,84 +1,125 @@
 # 翻译流
 
-Windows 桌面上的日语视频字幕与本地画面处理工具。选文件、选功能，完成后从“成品”页播放、校对或导出。
+给日语视频加上中文字幕，也能去马、边看边调美颜。
 
-目前是源码发布准备版，功能基线为 `v1-desktop-accepted-20261004`，项目采用 [Apache-2.0](LICENSE) 许可证。对外源码包采用当前源码快照，不含开发 Git 历史；工具、模型、媒体和本机配置需另行准备。
+[开始使用](#开始使用) · [安装视频组件](WORKFLOW.md#新机器安装) · [常见问题](#常见问题)
+
+![翻译流桌面首页：去马、翻译、美颜，以及任务和成品入口](docs/images/home.png)
 
 ## 能做什么
 
-| 输入与选择 | 得到什么 |
-|---|---|
-| 日语视频 → 翻译 | 中文字幕 SRT，保留原画和原声音的 MKV，可追加 MP4 |
-| 日文 SRT → 翻译 | 中文 SRT 和检查报告，无需显卡识别 |
-| 视频 → 去马 | Jasna 本地处理后的成片，保留原声音和已有字幕 |
-| 视频 → 翻译 + 去马 | 识别完成后两路工作，最后合成带中文字幕的成片 |
-| 已有字幕的视频 → 换格式 | 在支持的容器间复制轨道，避免重跑翻译 |
-| 本地视频 → 美颜播放 | 播放时调磨皮、美白、瘦脸、大眼，不生成整片副本 |
+- **翻译视频或字幕。** 导入日语视频或日文 SRT，生成中文字幕；视频可保存为 MKV 或 MP4，保留原声音。
+- **去马。** 使用本地 Jasna 处理画面，可单独使用，也可和翻译一起做。结果是模型推断的画面，效果需要试看。
+- **边看边调美颜。** 播放时调整磨皮、美白、瘦脸和大眼，只改变观看效果。
+- **批量处理和字幕校对。** 一次添加多部视频，中途停止后可以继续。做完后在「成品」里播放、改字幕、另存修订版或清理中间文件。
 
-支持顺序批量、停止后继续、关窗后台运行、字幕校对、另存修订 MKV，以及列出精确文件后清理中间产物。处理后的图像是模型推断，不能还原或证明原始细节。
+已有字幕的视频，也可以在设置里单独换格式。音视频处理留在本机；翻译会把字幕文本发送给所选服务，使用你自己的账号和额度。
 
-## 需要准备什么
+## 开始使用
 
-- **Windows 11 x64、Windows PowerShell 5.1、Python 3.12 x64**：这是当前验证环境。WPF 桌面不支持 macOS/Linux；其他 Windows/Python 版本未完整验证。
-- **翻译服务任选一种**：Codex 的本机 ChatGPT 登录，或 DeepSeek、Qwen、Kimi、OpenAI、Anthropic、Gemini API。账户、地域、模型和额度由你准备；不同服务的真实可用性分别验证。
-- **视频字幕**：FFmpeg、Whisper A 模型和 faster-whisper C 模型；现有 GPU 路线使用 NVIDIA CUDA。A 默认 Turbo，也可选 large-v3；C 始终是 large-v3。
-- **去马**：额外需要 Jasna 0.10.0、相应模型/本机 TensorRT 引擎，以及本机完成的短样和 30 分钟验收。不能只下载源码就直接开始整片。
-- **美颜播放**：Edge、FFmpeg 和显式安装的本地美颜组件。
+目前提供源码。桌面版使用 **Windows 11 x64、Python 3.12 x64**；视频识别和去马当前使用 NVIDIA CUDA 路线。工具与模型需要另外下载。
 
-视频、音频和人脸处理在本机；翻译会把字幕文本发给你本次同意的服务，并消耗相应账户额度。不要把 Key 写进源码或配置样例。
+**1. 准备 Python 环境**
 
-## 第一次打开
-
-1. 把源码放到较短、可写的目录，例如 `C:\TranslationFlow`。工具和画面工作目录优先使用纯英文路径，预留模型、音频、视频分段和成片空间。
-2. 安装 [Python 3.12 x64](https://www.python.org/downloads/windows/)，在源码目录打开 PowerShell：
-
-   ```powershell
-   py -3.12 -m venv .venv
-   Copy-Item .\config\local.example.psd1 .\config\local.psd1
-   ```
-
-   主程序使用 Python 标准库，无需给它安装整套模型依赖。`.venv` 会被桌面入口自动找到。若使用其他 Python，按样例在 `config/local.psd1` 填写 `PythonPath` 的绝对路径。
-3. 先校验界面和最小字幕环境，不调用翻译或显卡：
-
-   ```powershell
-   powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\desktop\Start-TranslationFlow.ps1 -ValidateOnly
-   .\.venv\Scripts\python.exe -m translation_flow.diagnostics --mode srt --provider deepseek
-   ```
-
-   `paths_available` 只代表路径存在，未验证登录、网络、模型或 GPU。
-4. 准备要用的服务。Codex 按[官方 CLI 安装说明](https://learn.chatgpt.com/docs/codex/cli)选择 Windows 安装方式，再 `codex login`，选择 ChatGPT 登录；`codex login status` 可查状态，见[官方认证说明](https://learn.chatgpt.com/docs/auth)。其他 API 在界面选择服务、模型/地域后填写本次 Key。
-5. 双击 **`启动翻译流.cmd`**。可先用自己的短 SRT 验证翻译，再安装视频组件。开始处理前的服务检查会使用少量服务额度。
-
-## 启用视频、去马和美颜
-
-按 [WORKFLOW 的新机器安装步骤](WORKFLOW.md#新机器安装)取得固定版本组件、摆放目录、安装 C 依赖并执行只读诊断。下载与首次引擎编译可能较大，需要你显式执行；打开程序不会自动安装这些组件。
-
-字幕视频环境检查：
+安装 [Python 3.12](https://www.python.org/downloads/windows/)，把源码解压到可写目录，例如 `C:\TranslationFlow`。在这个目录打开 PowerShell：
 
 ```powershell
-.\.venv\Scripts\python.exe -m translation_flow.diagnostics --mode video --provider codex
-# 如果在界面选择了 large-v3：
-.\.venv\Scripts\python.exe -m translation_flow.diagnostics --mode video --provider codex --asr-a-model large-v3
+py -3.12 -m venv .venv
+Copy-Item .\config\local.example.psd1 .\config\local.psd1
 ```
 
-缺少 Silero VAD 时会警告并保留原识别时间。它只用于有证据支持的开头局部校时，不会整体平移或全片重识别。去马安装和建立本机验收报告的完整命令也在安装步骤中。
+桌面入口会自动找到 `.venv`。使用其他位置的 Python 时，在 `config/local.psd1` 填写 `PythonPath`。
 
-## 遇到问题
+**2. 打开程序，选好翻译服务**
 
-| 现象 | 处理 |
-|---|---|
-| 找不到 Python / 模型 / FFmpeg | 先跑对应模式的 `diagnostics`，按缺失路径补组件；桌面路径可填 `config/local.psd1` |
-| 翻译登录、网络或额度失败 | 修好对应服务后，在“任务”页按原请求继续；不要改字幕缓存或换模型冒充同一任务 |
-| 关闭窗口后还在运行 | 后台队列会继续；需要停时先点“停止”，等待阶段安全退出 |
-| 重开后任务暂停 | 重新确认本次授权；必要时补 Key，然后继续 |
-| 去马提示缺验收报告或引擎 | 完成本机安装和样片验收；不要复制别人的报告或引擎假装通过 |
-| 成片占用很多空间 | 先观看确认，再在成品卡点“清理中间文件”；清理后不能再从已删分段恢复 |
-| 字幕、画面或同步看着不对 | 技术检查不能代替观看。保留日志和原始检查点，先定位失败阶段 |
+双击 **`启动翻译流.cmd`**。可选 Codex、DeepSeek、Qwen、Kimi、OpenAI、Anthropic 或 Gemini。
 
-机器检查涵盖结构、轨道、时长、解码与恢复；翻译自然度、画面质量和同步仍需要你看。现有测试与历史样本的范围见 [WORKFLOW](WORKFLOW.md)，不代表所有 GPU、服务或输入都已验收。
+使用 Codex 时，先按[官方说明](https://learn.chatgpt.com/docs/codex/cli)安装 CLI，再运行 `codex login`；API 方式在界面填写所选服务的 Key。已有日文字幕的话，可以先用一小段 SRT 试一下。开始前的服务连接检查会使用少量账户额度。
+
+**3. 按需安装视频组件**
+
+视频需要 FFmpeg 和 Whisper 识别组件，版本、下载来源和放置目录见[安装说明](WORKFLOW.md#新机器安装)。去马还需 Jasna、本机生成的 TensorRT 引擎，以及短样和 30 分钟样片检查；美颜组件可以单独安装。
+
+准备好后，选视频、勾选功能和保存位置，点击「开始处理」。翻译完成后，可以在「成品 → 字幕校对」边看边改，另存修订版。
+
+<details>
+<summary>检查本地环境</summary>
+
+在源码目录运行，`provider` 换成你使用的服务：
+
+```powershell
+# 检查桌面能否加载
+powershell.exe -NoProfile -STA -ExecutionPolicy Bypass -File .\desktop\Start-TranslationFlow.ps1 -ValidateOnly
+
+# 检查字幕翻译所需的本地路径
+.\.venv\Scripts\python.exe -m translation_flow.diagnostics --mode srt --provider deepseek
+
+# 检查视频组件
+.\.venv\Scripts\python.exe -m translation_flow.diagnostics --mode video --provider codex
+```
+
+选择 large-v3 时，在视频检查命令后加上 `--asr-a-model large-v3`。`missing_paths` 会列出缺少的文件。这些命令不运行模型或翻译；路径检查通过后，仍需在开始任务时确认服务和运行环境可用。
+
+</details>
+
+## 常见问题
+
+<details>
+<summary>提示找不到 Python、FFmpeg 或模型</summary>
+
+展开上面的「检查本地环境」，按缺失路径补齐组件。如果工具放在其他盘，在 `config/local.psd1` 配置对应路径；字段说明见[配置样例](config/local.example.psd1)。
+
+</details>
+
+<details>
+<summary>翻译中断了，或者重开后任务暂停</summary>
+
+检查所选服务的登录、网络和额度，再到「任务」页点继续。重开程序后，可能需要重新填写 Key 并确认继续翻译；已完成的步骤会尽量复用。需要更换模型时，新建任务即可。
+
+</details>
+
+<details>
+<summary>为什么关闭窗口后还在处理？</summary>
+
+窗口关闭后，后台队列会继续工作。想暂停处理时，先在任务里点「停止」，等状态更新后再关窗口。
+
+</details>
+
+<details>
+<summary>去马提示缺少引擎或验收报告</summary>
+
+Jasna 首次使用需要为本机显卡生成引擎，并完成样片检查。按[安装说明](WORKFLOW.md#在新机器建立画面验收报告)走完后，将生成的报告路径填入 `AcceptanceGateReport`。
+
+</details>
+
+<details>
+<summary>处理完以后，怎么腾出硬盘空间？</summary>
+
+先确认成片能正常观看，再点成品卡上的「清理中间文件」。程序会列出待删除的文件，完整成片、字幕和日志会保留。清掉的中间分段无法再用于恢复任务。
+
+</details>
+
+<details>
+<summary>字幕有错，或者声音和字幕对不上</summary>
+
+文字可以在「成品 → 字幕校对」中修改，保存后另存修订成片。遇到时间偏移或处理错误时，保留任务日志，反馈输入类型、处理选项和出现问题的位置，便于排查。
+
+</details>
 
 ## 开发与许可
 
-工程入口是 [AGENTS](AGENTS.md)、[PROJECT_BRIEF](PROJECT_BRIEF.md)、[WORKFLOW](WORKFLOW.md)。离线回归：`python -m unittest discover -s tests -q`，画面回归：`python -m unittest discover -s tests_jasna_picture -q`；部分集成测试按真实工具环境跳过。
+实现和模块说明见 [PROJECT_BRIEF](PROJECT_BRIEF.md)，安装与运行步骤见 [WORKFLOW](WORKFLOW.md)，协作约定见 [AGENTS](AGENTS.md)。
 
-除另有标注外，本项目代码、文档及项目自行生成的首页插图采用 [Apache License 2.0](LICENSE)。第三方来源、版本、已知许可证及尚未核实项见 [THIRD_PARTY_NOTICES.txt](THIRD_PARTY_NOTICES.txt)，美颜播放器保留其 [第三方声明](beauty_player/THIRD_PARTY.txt)。外部二进制和模型仍适用各自的许可条件。
+<details>
+<summary>运行测试</summary>
+
+```powershell
+python -m unittest discover -s tests -q
+python -m unittest discover -s tests_jasna_picture -q
+```
+
+部分集成测试需要相应的本地工具。现有测试环境和样片记录见运行手册。
+
+</details>
+
+本项目采用 [Apache-2.0](LICENSE)。第三方工具、模型及引用代码遵循各自的许可，详见 [THIRD_PARTY_NOTICES](THIRD_PARTY_NOTICES.txt)。
