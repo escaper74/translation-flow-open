@@ -1,0 +1,18 @@
+<Window xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml" Title="字幕校对 · 人工修订副本" Width="1140" Height="820" MinWidth="850" MinHeight="650" WindowStartupLocation="CenterOwner" Background="#F5F7FA" FontFamily="Microsoft YaHei UI" FontSize="14">
+  <Window.Resources><Style TargetType="Button"><Setter Property="Padding" Value="12,7"/><Setter Property="Margin" Value="0,0,8,0"/></Style></Window.Resources>
+  <Grid Margin="20">
+    <Grid.RowDefinitions><RowDefinition Height="Auto"/><RowDefinition Height="220"/><RowDefinition Height="Auto"/><RowDefinition Height="*"/><RowDefinition Height="Auto"/><RowDefinition Height="Auto"/></Grid.RowDefinitions>
+    <TextBlock Text="字幕校对：点击一行定位画面，双击中文修改。编号和时间保持不变。" TextWrapping="Wrap" Margin="0,0,0,12"/>
+    <MediaElement x:Name="ReviewPlayer" Grid.Row="1" LoadedBehavior="Manual" UnloadedBehavior="Close" Stretch="Uniform"/>
+    <DockPanel Grid.Row="2" Margin="0,10,0,10"><Button x:Name="ReviewPlay" Content="播放" DockPanel.Dock="Left"/><Button x:Name="ReviewPause" Content="暂停" DockPanel.Dock="Left"/><TextBlock x:Name="ReviewPlaybackHint" Text="内置播放依赖 Windows 的解码支持；打不开仍可校对和导出字幕。" TextWrapping="Wrap" Foreground="#526173" VerticalAlignment="Center"/></DockPanel>
+    <DataGrid x:Name="ReviewGrid" Grid.Row="3" AutoGenerateColumns="False" SelectionMode="Single" CanUserAddRows="False" CanUserDeleteRows="False" Background="White" HeadersVisibility="Column" EnableRowVirtualization="True">
+      <DataGrid.Columns>
+        <DataGridTextColumn Header="时间" Binding="{Binding time}" IsReadOnly="True" Width="110"/>
+        <DataGridTextColumn Header="日文参考" Binding="{Binding japanese}" IsReadOnly="True" Width="*" MinWidth="240"><DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/></Style></DataGridTextColumn.ElementStyle></DataGridTextColumn>
+        <DataGridTextColumn Header="中文（可编辑）" Binding="{Binding chinese, Mode=TwoWay, UpdateSourceTrigger=PropertyChanged}" Width="*" MinWidth="240"><DataGridTextColumn.ElementStyle><Style TargetType="TextBlock"><Setter Property="TextWrapping" Value="Wrap"/></Style></DataGridTextColumn.ElementStyle><DataGridTextColumn.EditingElementStyle><Style TargetType="TextBox"><Setter Property="AcceptsReturn" Value="True"/><Setter Property="TextWrapping" Value="Wrap"/></Style></DataGridTextColumn.EditingElementStyle></DataGridTextColumn>
+      </DataGrid.Columns>
+    </DataGrid>
+    <TextBlock x:Name="ReviewStatus" Grid.Row="4" Foreground="#526173" TextWrapping="Wrap" Margin="0,12,0,12" Text="另存人工修订版，不覆盖自动原稿或缓存。导出成片只替换中文字幕，不重新识别、翻译或处理画面。"/>
+    <WrapPanel x:Name="ReviewActions" Grid.Row="5"><Button x:Name="ReviewSave" Content="另存修订 SRT"/><Button x:Name="ReviewExport" Content="导出修订成片（MKV）"/><Button x:Name="ReviewOpen" Content="打开修订文件夹" IsEnabled="False"/><Button x:Name="ReviewPlayResult" Content="播放修订成片" IsEnabled="False"/></WrapPanel>
+  </Grid>
+</Window>
