@@ -116,14 +116,12 @@ def _run_streamed(
     log_path: Path,
     *,
     mirror_output: bool = True,
-    stop_on_software_decode: bool = False,
     timeout_seconds: float | None = None,
     progress_stall_seconds: float | None = None,
     idle_gpu_threshold_percent: int = 10,
 ) -> float:
     log_path.parent.mkdir(parents=True, exist_ok=True)
     started = time.perf_counter()
-    fallback_detected = False
     timed_out = False
     stalled = False
     stalled_gpu_utilization: int | None = None
@@ -201,10 +199,6 @@ def _run_streamed(
                 if current_frame > highest_processed_frame:
                     highest_processed_frame = current_frame
                     last_progress_at = time.perf_counter()
-            if stop_on_software_decode and has_software_decode_fallback(line):
-                fallback_detected = True
-                _terminate_process_tree(process)
-                break
         try:
             return_code = process.wait(timeout=10)
         except subprocess.TimeoutExpired:
@@ -215,11 +209,6 @@ def _run_streamed(
         elapsed = time.perf_counter() - started
         log.write(f"\nreturn_code={return_code}\nelapsed_seconds={elapsed:.3f}\n")
 
-    if fallback_detected:
-        raise ExperimentError(
-            "检测到 Jasna 回退到 FFmpeg 软件解码并上传 CUDA；已终止。本轮只保留日志，"
-            "不得进入 30 分钟实验，应另开排障任务。"
-        )
     if timed_out:
         raise ExperimentError(
             f"外部处理墙钟超过 {timeout_seconds:.0f} 秒，已终止并保留日志：{log_path}。"
@@ -516,7 +505,6 @@ def _execute_command_step(plan: ExperimentPlan, step: ExperimentStep) -> dict[st
     elapsed = _run_streamed(
         step.command,
         _log_path(plan, step),
-        stop_on_software_decode=step.key in GPU_STEPS,
         timeout_seconds=SHORT_PROCESS_TIMEOUT_SECONDS if step.key == "process-short" else None,
     )
     for expected in step.expected_outputs:

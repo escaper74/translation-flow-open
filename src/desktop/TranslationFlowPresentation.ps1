@@ -41,6 +41,8 @@ function Reset-RunPresentation {
     $EtaText.Text = '正在估算'
     (Get-Control 'EtaLabel').Text = '当前阶段预计还需'
     $RecoverySummaryText.Text = ''
+    (Get-Control 'FailureDetailText').Text = ''
+    (Get-Control 'FailureDetailText').Visibility = 'Collapsed'
     $RunDetails.IsExpanded = $false
     $ResultFilesPanel.Visibility = 'Collapsed'
     $RetryRunButton.Visibility = 'Collapsed'
@@ -142,6 +144,10 @@ function Update-ClockPresentation {
 
 function Complete-RunPresentation([bool]$Succeeded, [bool]$Cancelled) {
     $StopRunButton.Visibility = 'Collapsed'
+    if ($Succeeded -or $Cancelled) {
+        (Get-Control 'FailureDetailText').Text = ''
+        (Get-Control 'FailureDetailText').Visibility = 'Collapsed'
+    }
     $terminal = $(if ($Succeeded) { $script:CompletedEvent } elseif ($Cancelled) { $script:CancelledEvent } else { $script:FailedEvent })
     $script:RunEndedAt = ConvertTo-UiEventTime $terminal
     if ($null -eq $script:RunEndedAt) { $script:RunEndedAt = [DateTimeOffset]::UtcNow }

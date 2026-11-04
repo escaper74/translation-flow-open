@@ -549,6 +549,19 @@ class FullWorkflowTests(unittest.TestCase):
             self.assertTrue(result["stages"]["translation"]["reused"])
             self.assertTrue(result["stages"]["final_mux"]["reused"])
 
+    def test_tool_root_move_does_not_invalidate_full_workflow_identity(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            runner = self._runner(root, [], [])
+            first = runner._load_or_create_manifest()
+            before = runner.paths.manifest.read_bytes()
+            runner.tool_root = root / "new-tools"
+            runner.jasna = runner.tool_root / "jasna/jasna.exe"
+            runner.acceptance_gate_report = runner.tool_root / "retired-gate.json"
+            current = runner._load_or_create_manifest()
+            self.assertEqual(first["source"], current["source"])
+            self.assertEqual(before, runner.paths.manifest.read_bytes())
+
     def test_legacy_serial_manifest_can_resume_under_parallel_schedule(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
@@ -758,7 +771,7 @@ class FullWorkflowTests(unittest.TestCase):
             self.assertFalse(runner.paths.final_output.exists())
             self.assertFalse(runner.paths.result.exists())
 
-    def test_request_requires_explicit_human_gate(self) -> None:
+    def test_new_request_does_not_invent_human_acceptance(self) -> None:
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             source = root / "movie.mkv"
@@ -782,8 +795,9 @@ class FullWorkflowTests(unittest.TestCase):
                 },
                 "gates": {"picture_and_mux_30m_human_accepted": False},
             }
-            with self.assertRaisesRegex(ValueError, "30 分钟"):
-                FullWorkflowRequest.from_mapping(payload)
+            self.assertFalse(FullWorkflowRequest.from_mapping(payload).gates.picture_and_mux_30m_human_accepted)
+            payload.pop("gates")
+            self.assertFalse(FullWorkflowRequest.from_mapping(payload).gates.picture_and_mux_30m_human_accepted)
 
     def test_desktop_stdout_remains_one_monotonic_jsonl_event_stream(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

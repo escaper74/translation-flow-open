@@ -14,6 +14,7 @@ function Initialize-QueueUi {
     $script:SelectedFiles = @()
     $script:QueuePollAt = [DateTime]::MinValue
     $script:QueueSubmitting = $false
+    $script:QueueDraftActive = $false
     $script:PendingQueuePayload = $null
     foreach ($name in @('QueuePanel','QueueGrid','QueueStatusText','QueueSubmissionText','QueueSummaryText','ViewQueueItemButton','ResumeQueueItemButton','PauseQueueButton','StopQueueButton')) {
         Set-Variable -Name $name -Value (Get-Control $name) -Scope Script
@@ -33,6 +34,24 @@ function Initialize-QueueUi {
     $script:QueueTimer.Start()
 }
 
+function Start-TaskDraft {
+    if ($script:QueueSubmitting -or $null -ne $script:AccessBridge -or
+        ($script:IsRunning -and -not $script:QueueEnabled)) { return $false }
+    if ($script:QueueEnabled) {
+        # IsRunning describes the task in the detail pane. The queue snapshot
+        # remains authoritative for work running independently in the background.
+        $script:QueueDraftActive = $true
+        $script:IsRunning = $false
+        $script:CurrentQueueId = ''
+        $script:QueueRunStamp = ''
+        $script:CurrentRequestPath = ''
+        $script:CurrentJobId = ''
+        $script:AccessResumeIntent = $false
+    }
+    Set-InputEnabled $true
+    return $true
+}
+
 function Set-SelectedFiles([string[]]$Paths) {
     $files = @($Paths | Select-Object -Unique)
     if (-not $files.Count) { return }
@@ -42,6 +61,7 @@ function Set-SelectedFiles([string[]]$Paths) {
         return
     }
     if (-not $script:QueueEnabled -and $files.Count -gt 1) { $InputErrorText.Text = '当前环境未接入后台队列，请先选择一个文件。'; return }
+    if (-not (Start-TaskDraft)) { return }
     Set-SelectedVideo $files[0]
     $script:SelectedFiles = @($files | ForEach-Object { [IO.Path]::GetFullPath($_) })
     $SelectedFilesText.Visibility = $(if ($files.Count -gt 1) { 'Visible' } else { 'Collapsed' })
@@ -113,6 +133,11 @@ function Receive-QueueCall {
     try {
         $values = @($call.Shell.EndInvoke($call.Async))
         if ($call.Shell.HadErrors -or -not $values.Count) { throw '后台暂未确认操作。请刷新任务，确认进度后再试。' }
+        if ($call.Action -in @('enqueue','resume')) {
+            $script:QueueDraftActive = $false
+            $script:SelectedFiles = @()
+            $script:PendingQueueResumeId = ''
+        }
         Apply-QueueSnapshot $values[-1]
         $script:QueueLastError = ''
         $QueueStatusText.ToolTip = $null
@@ -124,9 +149,12 @@ function Receive-QueueCall {
         $script:QueueLastError = "$($_.Exception.Message) at $($_.InvocationInfo.ScriptLineNumber): $($_.InvocationInfo.Line)"
         if ($call.Shell.Streams.Error.Count) { $script:QueueLastError = ($call.Shell.Streams.Error | ForEach-Object { "$_ / $($_.InvocationInfo.PositionMessage) / $($_.ScriptStackTrace)" }) -join "`n" }
         $QueueStatusText.ToolTip = $script:QueueLastError
-        if ($call.Action -ne 'status') {
+        if ($call.Action -in @('enqueue','resume')) {
+            $script:QueueDraftActive = $true
+            $script:IsRunning = $false
             $InputErrorText.Text = "后台未确认开始：$failureMessage 请在任务页核对是否已接收；已保存的请求可以继续。"
             Set-UiPage 'setup'
+            Set-InputEnabled $true
         }
         Add-EventLog "后台状态暂时不可用：$failureMessage"
     } finally {
@@ -167,8 +195,12 @@ function Apply-QueueSnapshot($Reply) {
     $QueueSummaryText.Visibility = $(if ($rows.Count -gt 1) { 'Visible' } else { 'Collapsed' })
     $QueueSummaryText.Text = $QueueStatusText.Text
     $ShowTasksButton.Content = $(if ($active.Count -or $waiting.Count) { "任务 · $($active.Count + $waiting.Count)" } else { '任务' })
+    # Keep task cards live while composing, including completion/failure of the
+    # previous job. A polling reply must never replace a draft's source/settings.
+    if ($script:QueueDraftActive) { return }
     $watched = $Reply.Watched
     if ($null -eq $watched) { return }
+    if ($script:CurrentQueueId -and $watched.id -ne $script:CurrentQueueId) { return }
     if ($script:UiPage -eq 'setup' -and -not $script:QueueSubmitting -and $watched.status -notin @('starting','running','stopping')) { return }
     $stamp = "$($watched.id)/$(Get-JsonProperty $watched 'started_at' 0)"
     if ($script:QueueRunStamp -ne $stamp) {
@@ -245,19 +277,21 @@ function Show-QueueSubmission($Queue) {
 }
 
 function Start-AuthorizedBatch {
+    if ($script:QueueSubmitting) { return }
     if (-not $script:QueueEnabled) { Start-ConfirmedRun; return }
     if ($script:PendingQueueResumeId) {
         $resumeError = Test-QueueResumeSettings
         if ($resumeError) { throw $resumeError }
         $keys = @{}
         if ($ApiKeyBox.Password) { $keys[$script:PendingQueueResumeId] = $ApiKeyBox.Password }
-        $payload = @{ action='resume'; ids=@($script:PendingQueueResumeId); authorized=$true; credentials=$keys }
+        $runtime = @{ python_path=(Resolve-TranslationPython); tool_root=(Get-TaskToolRoot); jasna_path=(Get-TaskJasnaPath) }
+        $payload = @{ action='resume'; ids=@($script:PendingQueueResumeId); authorized=$true; credentials=$keys; runtime=$runtime }
         $ApiKeyBox.Clear()
-        $script:PendingQueueResumeId = ''
     } else {
         $paths = $(if ($script:SelectedFiles.Count) { $script:SelectedFiles } else { @($InputVideoBox.Text) })
         $credential = $ApiKeyBox.Password
         $originalMode = Get-SelectedTaskMode
+        $originalInput = $InputVideoBox.Text
         $script:CollectedQueueItems.Clear()
         $script:CollectQueueRequests = $true
         try {
@@ -275,11 +309,11 @@ function Start-AuthorizedBatch {
                 Start-ConfirmedRun
             }
             $payload = @{ action='enqueue'; authorized=$true; items=@($script:CollectedQueueItems) }
-        } finally { $script:CollectQueueRequests=$false; $ApiKeyBox.Clear(); $credential=$null; Select-ComboBoxItemByTag $TaskModeBox $originalMode }
+        } finally { $script:CollectQueueRequests=$false; $ApiKeyBox.Clear(); $credential=$null; Select-ComboBoxItemByTag $TaskModeBox $originalMode; $InputVideoBox.Text=$originalInput }
     }
+    $script:QueueDraftActive = $true
     $script:QueueSubmitting = $true
     $StartButton.IsEnabled = $false
-    $script:SelectedFiles = @()
     $script:CurrentQueueId = ''
     $script:QueueRunStamp = ''
     try {

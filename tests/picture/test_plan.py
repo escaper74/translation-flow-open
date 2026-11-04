@@ -26,6 +26,19 @@ class PlanTests(unittest.TestCase):
         )
         self.plan = build_experiment_plan(self.paths)
 
+    def test_short_sample_cli_uses_selected_start_and_full_needs_no_history(self):
+        from jasna_picture.cli import build_parser, _build_plan, _build_workflow_config
+        parser = build_parser()
+        common = ["--source", "sample.mp4", "--work-dir", "sample-work"]
+        default = _build_plan(parser.parse_args(["plan", *common]))
+        selected = _build_plan(parser.parse_args(["plan", *common, "--short-start", "00:02:00"]))
+        for plan, expected in ((default, "00:00:00"), (selected, "00:02:00")):
+            command = plan.step("prepare-short").command
+            self.assertEqual(expected, command[command.index("-ss") + 1])
+            self.assertEqual(expected, plan.as_dict()["ranges"]["short"]["start"])
+        full = _build_workflow_config(parser.parse_args(["workflow-plan", *common, "--scope", "full", "--output", "candidate.mkv"]))
+        self.assertIsNone(full.gate_report)
+
     def test_step_order_is_explicit(self) -> None:
         self.assertEqual(
             [step.key for step in self.plan.steps],

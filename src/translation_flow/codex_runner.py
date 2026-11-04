@@ -117,7 +117,7 @@ def validate_codex_translation(request: Any, job_root: Path, chinese: Path) -> t
     source_identity = source_report.get("identity", {})
     expected_paths = {"a": job_root / "asr/A/A.ja.srt", "c": job_root / "asr/C/C.ja.srt",
                       "fusion": fused, "asr_report": job_root / "asr/asr.report.json"}
-    digests = {name: subtitle_digest(parse_srt(path)) for name, path in expected_paths.items() if name != "asr_report"}
+    digests = {name: subtitle_digest(parse_srt(path, allow_empty=name == "c")) for name, path in expected_paths.items() if name != "asr_report"}
     if (source_report.get("status") != "complete"
             or source_identity.get("provider_id") != "codex"
             or source_identity.get("model") != request.provider.model
@@ -151,9 +151,6 @@ def validate_codex_translation(request: Any, job_root: Path, chinese: Path) -> t
 def run_codex_translation(runner: Any) -> dict[str, Any]:
     from .runner import ToolPaths
     request = runner.request
-    longest_cache = runner.job_root / "translations" / "v1" / ("x" * 64) / "batches" / "kana_repair" / "000001_000060_0000000000.json"
-    if os.name == "nt" and len(str(longest_cache)) >= 260:
-        raise ValueError("输出目录过深，Windows 无法写入字幕批次缓存；请使用较短的输出目录（例如磁盘根目录下的成片文件夹）。尚未调用 Codex 或运行 ASR。")
     runner.api_key = ""
     request.output_dir.mkdir(parents=True, exist_ok=True)
     runner.job_root.mkdir(parents=True, exist_ok=True)
@@ -192,6 +189,8 @@ def run_codex_translation(runner: Any) -> dict[str, Any]:
             runner.on_asr_ready()
         runner.events.emit("stage_completed", stage="subtitle_validation", resumed=True, overall_percent=82)
     else:
+        from .translation.pipeline import validate_cache_path
+        validate_cache_path(runner.job_root / "translations")
         provider_factory = runner.codex_provider_factory or CodexProvider
         provider = provider_factory(audit_dir=runner.job_root / "codex-calls", model=request.provider.model,
                                     cancelled=runner.cancel_requested)

@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import os
 import tempfile
 import threading
 import time
@@ -107,6 +108,18 @@ class SrtContractTests(unittest.TestCase):
 
 
 class TranslationPipelineTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Windows path boundary")
+    def test_standalone_translation_blocks_unwritable_cache_before_provider(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            source = write_srt(root / "source.srt", [SubtitleCue(1, 0, 1000, "hello")])
+            provider = FakeProvider()
+            with self.assertRaisesRegex(ValueError, "输出目录过深"):
+                run_translation(source, root / "out.srt", root / "report.json", root / ("long" * 40),
+                                "normal", provider, "m1")
+            self.assertEqual([], provider.calls)
+            self.assertFalse((root / "out.srt").exists())
+
     def test_zero_duration_source_is_rejected_before_provider_call(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)

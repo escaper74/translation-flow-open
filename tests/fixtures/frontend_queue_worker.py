@@ -41,6 +41,9 @@ def job(path):
             checkpoint.write_text("local fixture", encoding="utf-8")
         events.emit("stage_progress", stage="translate_initial", detail=f"{number+1}/12",
                     resumed=reused, overall_percent=10+(number+1)*7)
+    if (job_dir / "fail.fixture").exists():
+        events.emit("job_failed", message="offline fixture failure", error_code="FixtureFailure")
+        return 1
     output = job_dir / "fixture.zh-CN.srt"
     output.write_text("1\n00:00:01,000 --> 00:00:02,000\n测试字幕\n", encoding="utf-8")
     report = job_dir / "translation.report.json"

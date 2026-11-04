@@ -23,6 +23,7 @@ from .runner import (
     _stream_signature,
     _video_stream,
     _write_json,
+    has_software_decode_fallback,
 )
 
 
@@ -34,6 +35,7 @@ SEGMENT_TIMEOUT_REALTIME_FACTOR = 1.25
 SEGMENT_STALL_SECONDS = 60.0
 IDLE_GPU_THRESHOLD_PERCENT = 10
 EXPECTED_OUTPUT_CODEC = "hevc"
+DECODER_BACKENDS = frozenset({"vali-nvdec", "pyav-cuda", "ffmpeg-software-cuda"})
 FULL_DURATION_TOLERANCE_SECONDS = 2.0
 
 BASICVSR_ENGINE_NAMES = (
@@ -56,7 +58,7 @@ class PictureWorkflowConfig:
     jasna: Path
     ffmpeg: Path
     ffprobe: Path
-    gate_report: Path
+    gate_report: Path | None = None
     start: str | None = None
     segment_seconds: int = DEFAULT_SEGMENT_SECONDS
 
@@ -105,7 +107,7 @@ class PictureWorkflowConfig:
             "jasna": str(self.jasna),
             "ffmpeg": str(self.ffmpeg),
             "ffprobe": str(self.ffprobe),
-            "gate_report": str(self.gate_report),
+            "gate_report": str(self.gate_report) if self.gate_report else None,
             "start": self.start,
             "duration_seconds": (
                 ACCEPTANCE_DURATION_SECONDS if self.scope == "acceptance" else None
@@ -175,104 +177,12 @@ def _frozen_route() -> dict[str, Any]:
     }
 
 
-def _gate_lineage(config: PictureWorkflowConfig, report: dict[str, Any]) -> dict[str, Any]:
-    """Validate the accepted global route gate and record its source evidence."""
-
-    source_identity = report.get("source_identity")
-    route = report.get("route")
-    lineage_source = "report"
-    if not isinstance(source_identity, dict) or not isinstance(route, dict):
-        # The already accepted 2026-08-17 report predates embedded lineage. Its
-        # sibling formal manifest is the authoritative source/route record.
-        legacy_manifest = config.gate_report.parent.parent / "workflow.json"
-        legacy = _load_json(legacy_manifest, "前级验收 workflow manifest")
-        if (
-            legacy.get("scope") != "acceptance"
-            or Path(str(legacy.get("output", ""))).resolve()
-            != Path(str(report.get("output", ""))).resolve()
-        ):
-            raise ExperimentError("前级验收报告与其 workflow manifest 不匹配。")
-        source_identity = legacy.get("source")
-        route = legacy.get("route")
-        lineage_source = str(legacy_manifest)
-
-    if not isinstance(source_identity, dict) or not isinstance(route, dict):
-        raise ExperimentError("前级验收证据缺少源片身份或冻结画面路线。")
-    expected_source = _source_identity(config)
-    try:
-        same_path = Path(str(source_identity.get("path", ""))).resolve() == Path(
-            expected_source["path"]
-        ).resolve()
-    except (OSError, ValueError):
-        same_path = False
-    if route != _frozen_route():
-        raise ExperimentError("前级 30 分钟验收路线与当前冻结 Jasna 路线不匹配。")
-
-    source_match = {
-        "path": same_path,
-        "size": source_identity.get("size") == expected_source["size"],
-        "mtime_ns": source_identity.get("mtime_ns") == expected_source["mtime_ns"],
-    }
-    same_source = all(source_match.values())
-    informational_warnings = []
-    if not same_source:
-        informational_warnings.append(
-            {
-                "code": "GLOBAL_ROUTE_GATE_SOURCE_DIFFERS",
-                "message": (
-                    "全局路线 Gate 来自另一源片；它只证明冻结 Jasna 路线"
-                    "已获验收，不表示当前源片完成了逐片 30 分钟人工验收。"
-                ),
-            }
-        )
-    return {
-        "policy": "global_frozen_route_gate",
-        "gate_report": str(config.gate_report.resolve()),
-        "gate_status": report.get("status"),
-        "gate_scope": report.get("scope"),
-        "source_identity": source_identity,
-        "route": route,
-        "lineage_source": lineage_source,
-        "source_identity_match": {**source_match, "all": same_source},
-        "current_source_30m_human_reviewed": same_source,
-        "informational_warnings": informational_warnings,
-    }
-
-
-def _persist_global_route_gate_evidence(
-    config: PictureWorkflowConfig,
-    report: dict[str, Any],
-    gate_lineage: dict[str, Any] | None,
-) -> dict[str, Any]:
-    if config.scope != "full":
-        return report
-    if not isinstance(gate_lineage, dict):
-        raise ExperimentError("整片报告缺少全局冻结路线 Gate 证据。")
-
-    enriched = {
-        **report,
-        "release_status": "candidate_for_human_review",
-        "human_review_status": "pending",
-        "route_gate": gate_lineage,
-        "current_source_30m_human_reviewed": bool(
-            gate_lineage.get("current_source_30m_human_reviewed", False)
-        ),
-        "informational_warnings": [
-            *list(report.get("informational_warnings", [])),
-            *list(gate_lineage.get("informational_warnings", [])),
-        ],
-    }
-    _write_json(config.final_report_path, enriched)
-    return enriched
-
-
 def preflight_workflow(config: PictureWorkflowConfig) -> dict[str, Any]:
     _validate_config(config)
     _require_file(config.source, "源片")
     _require_file(config.jasna, "Jasna")
     _require_file(config.ffmpeg, "ffmpeg")
     _require_file(config.ffprobe, "ffprobe")
-    _require_file(config.gate_report, "前级验收报告")
     _ensure_ascii_install_path(config.jasna)
 
     engine_records: list[dict[str, Any]] = []
@@ -292,14 +202,8 @@ def preflight_workflow(config: PictureWorkflowConfig) -> dict[str, Any]:
     ffprobe_version = _first_output_line([str(config.ffprobe), "-version"], "ffprobe")
     source_probe = _probe(config.ffprobe, config.source)
     source_stream = _source_video_stream(source_probe)
-    gate_report = _load_json(config.gate_report, "前级验收报告")
-    if gate_report.get("status") != "technical_checks_passed":
-        raise ExperimentError(f"前级技术检查没有通过：{config.gate_report}")
-    if config.scope == "full" and gate_report.get("scope") != "acceptance":
-        raise ExperimentError("整片预检要求 scope=acceptance 的 30 分钟技术报告。")
-    gate_lineage = (
-        _gate_lineage(config, gate_report) if config.scope == "full" else None
-    )
+    if config.scope == "acceptance":
+        _acceptance_gate(config)
 
     return {
         "status": "preflight_passed",
@@ -309,7 +213,6 @@ def preflight_workflow(config: PictureWorkflowConfig) -> dict[str, Any]:
         "engines": engine_records,
         "source_duration_seconds": _duration(source_probe),
         "source_video_stream": source_stream,
-        "gate_lineage": gate_lineage,
     }
 
 
@@ -334,19 +237,20 @@ def _require_gate(
             "该 workflow 会使用 GPU。确认 Whisper A/C 已退出且不会打扰现有任务后，"
             "显式传入 --confirm-gpu-ready。"
         )
-    report = _load_json(config.gate_report, "前级验收报告")
-    if report.get("status") != "technical_checks_passed":
-        raise ExperimentError(f"前级技术检查没有通过：{config.gate_report}")
+    if config.scope != "acceptance":
+        return {}
+    report = _acceptance_gate(config)
     if not confirm_gate_viewed:
-        raise ExperimentError(
-            "必须确认用户已经观看并认可前级样片，才可显式传入 --confirm-gate-viewed。"
-        )
-    if config.scope == "full" and report.get("scope") != "acceptance":
-        raise ExperimentError(
-            "整片 workflow 只能由 30 分钟 acceptance 报告放行，不能直接使用 60 秒报告。"
-        )
-    if config.scope == "full":
-        _gate_lineage(config, report)
+        raise ExperimentError("30 分钟回归前须观看短样片，并显式传入 --confirm-gate-viewed。")
+    return report
+
+
+def _acceptance_gate(config: PictureWorkflowConfig) -> dict[str, Any]:
+    if config.gate_report is None:
+        raise ExperimentError("30 分钟回归需要 --gate-report 指向短样技术报告。")
+    report = _load_json(config.gate_report, "短样技术报告")
+    if report.get("status") != "technical_checks_passed":
+        raise ExperimentError(f"短样技术检查没有通过：{config.gate_report}")
     return report
 
 
@@ -379,7 +283,9 @@ def _load_or_create_manifest(config: PictureWorkflowConfig) -> dict[str, Any]:
     expected = _manifest_payload(config)
     if config.manifest_path.exists():
         actual = _load_json(config.manifest_path, "workflow manifest")
-        if actual != expected:
+        # Preflight still checks the frozen version/route. Relocating that
+        # installation does not change the source or completed segment identity.
+        if {**actual, "jasna": expected["jasna"]} != expected:
             raise ExperimentError(
                 "work_dir 已属于另一份源片、范围、输出或参数，拒绝混用："
                 f"{config.manifest_path}"
@@ -410,14 +316,14 @@ def _next_log_path(logs_dir: Path, stem: str) -> Path:
 
 
 def _successful_streamed_log(
-    logs_dir: Path, stem: str
+    logs_dir: Path, stem: str, *, latest_only: bool = False
 ) -> tuple[Path, float] | None:
     candidates = sorted(
         logs_dir.glob(f"{stem}*.log"),
         key=lambda path: path.stat().st_mtime_ns,
         reverse=True,
     )
-    for path in candidates:
+    for path in (candidates[:1] if latest_only else candidates):
         return_code: int | None = None
         elapsed_seconds: float | None = None
         for line in path.read_text(encoding="utf-8", errors="replace").splitlines():
@@ -441,8 +347,8 @@ def _successful_streamed_log(
     return None
 
 
-def _preserve_interrupted_file(path: Path) -> Path:
-    """Move an unproven working file aside without deleting evidence."""
+def _preserve_interrupted_path(path: Path) -> Path:
+    """Move an unproven working file or directory aside without deleting evidence."""
 
     attempt = 1
     while True:
@@ -509,10 +415,10 @@ def workflow_plan(config: PictureWorkflowConfig) -> dict[str, Any]:
             build_jasna_command(config.jasna, template_input, template_output)
         ),
         "gates": [
-            "前级技术报告通过且用户已观看认可",
+            "仅 acceptance 回归要求短样技术报告与用户观看确认",
             "调用者确认 Whisper A/C 已退出并释放 GPU",
             "七个 TensorRT 引擎真实存在且非空",
-            "30 分钟 acceptance 通过后才能进入 full",
+            "30 分钟 acceptance 是显式长时回归，不是 full 的前置条件",
         ],
     }
 
@@ -643,12 +549,12 @@ def _source_video_origin(ffprobe: Path, source: Path) -> dict[str, Any]:
 
 
 def _successful_prepare_log(config: PictureWorkflowConfig) -> tuple[Path, float]:
-    evidence = _successful_streamed_log(config.logs_dir, "prepare")
+    evidence = _successful_streamed_log(config.logs_dir, "prepare", latest_only=True)
     if evidence is not None:
         return evidence
     raise ExperimentError(
         "发现没有 prepare report 的输入段，但没有匹配的成功抽取日志；"
-        "保留现场并停止。"
+        "这些输入段尚不能作为完成检查点。"
     )
 
 
@@ -671,36 +577,47 @@ def _prepare_segments(
             raise ExperimentError("整片 prepare report 缺少源片首 packet 起点，拒绝猜测。")
         return records, {**report, "reused": True}
 
+    preserved_inputs = None
+    recovery_reason = None
     existing = sorted(config.inputs_dir.glob("segment_*.mkv")) if config.inputs_dir.exists() else []
     if existing:
-        records = _validate_prepared_segments(config, existing, expected_total_seconds)
-        log_path, elapsed = _successful_prepare_log(config)
-        origin_evidence = (
-            _source_video_origin(config.ffprobe, config.source)
-            if config.scope == "full"
-            else None
-        )
-        report = {
-            "status": "prepared",
-            "elapsed_seconds": elapsed,
-            "expected_total_seconds": expected_total_seconds,
-            "actual_total_seconds": sum(
-                float(item["duration_seconds"]) for item in records
-            ),
-            "segments": records,
-            "source_origin_seconds": (
-                origin_evidence["source_origin_seconds"]
-                if origin_evidence is not None
+        try:
+            records = _validate_prepared_segments(config, existing, expected_total_seconds)
+            log_path, elapsed = _successful_prepare_log(config)
+        except ExperimentError as exc:
+            # A prepare without a report has not handed anything to Jasna yet.
+            # Never invalidate downstream work if the recorded state disagrees.
+            if ((config.restored_dir.exists() and any(config.restored_dir.iterdir()))
+                    or config.final_report_path.exists() or config.output.exists()):
+                raise ExperimentError("输入段不完整但已有画面产物；保留现场，拒绝重新切段。") from exc
+            preserved_inputs = _preserve_interrupted_path(config.inputs_dir)
+            recovery_reason = str(exc)
+        else:
+            origin_evidence = (
+                _source_video_origin(config.ffprobe, config.source)
+                if config.scope == "full"
                 else None
-            ),
-            "source_origin_evidence": origin_evidence,
-            "log": str(log_path),
-            "reused": True,
-            "recovered_unreported_segments": True,
-        }
-        _write_json(config.prepare_report_path, report)
-        return records, report
-
+            )
+            report = {
+                "status": "prepared",
+                "elapsed_seconds": elapsed,
+                "expected_total_seconds": expected_total_seconds,
+                "actual_total_seconds": sum(
+                    float(item["duration_seconds"]) for item in records
+                ),
+                "segments": records,
+                "source_origin_seconds": (
+                    origin_evidence["source_origin_seconds"]
+                    if origin_evidence is not None
+                    else None
+                ),
+                "source_origin_evidence": origin_evidence,
+                "log": str(log_path),
+                "reused": True,
+                "recovered_unreported_segments": True,
+            }
+            _write_json(config.prepare_report_path, report)
+            return records, report
     origin_evidence = (
         _source_video_origin(config.ffprobe, config.source)
         if config.scope == "full"
@@ -733,19 +650,24 @@ def _prepare_segments(
         "log": str(log_path),
         "reused": False,
         "recovered_unreported_segments": False,
+        "preserved_interrupted_inputs": str(preserved_inputs) if preserved_inputs else None,
+        "recovery_reason": recovery_reason,
     }
     _write_json(config.prepare_report_path, report)
     return records, report
 
 
-def _require_hardware_decoder(log_path: Path) -> str:
+def _require_decoder(log_path: Path) -> str:
     text = log_path.read_text(encoding="utf-8", errors="replace").casefold()
+    # A hardware attempt can fall back later; record the actual compatibility path.
+    if has_software_decode_fallback(text):
+        return "ffmpeg-software-cuda"
     if "using vali nvdec decoder" in text:
         return "vali-nvdec"
     if "using pyav cuda" in text:
         return "pyav-cuda"
     raise ExperimentError(
-        "Jasna 日志没有出现 VALI NVDEC 或 PyAV CUDA 硬解码证据，拒绝把该段当成正式完成："
+        "Jasna 日志缺少已知解码方式证据，无法确认该段处理结果："
         f"{log_path}"
     )
 
@@ -844,7 +766,7 @@ def _process_segment(
                     f"{output}"
                 )
             log_path, elapsed = evidence
-            decoder_backend = _require_hardware_decoder(log_path)
+            decoder_backend = _require_decoder(log_path)
             return _write_segment_report(
                 report_path,
                 validation,
@@ -857,8 +779,8 @@ def _process_segment(
         report = _load_json(report_path, "segment report")
         if report.get("status") != "technical_checks_passed":
             raise ExperimentError(f"完成段报告状态无效：{report_path}")
-        if report.get("decoder_backend") not in {"vali-nvdec", "pyav-cuda"}:
-            raise ExperimentError(f"完成段报告缺少硬解码证据：{report_path}")
+        if report.get("decoder_backend") not in DECODER_BACKENDS:
+            raise ExperimentError(f"完成段报告缺少已知解码方式：{report_path}")
         return {**report, **validation, "reused": True}
 
     preserved_interrupted_file: Path | None = None
@@ -869,7 +791,7 @@ def _process_segment(
         if evidence is not None:
             log_path, elapsed = evidence
             try:
-                decoder_backend = _require_hardware_decoder(log_path)
+                decoder_backend = _require_decoder(log_path)
                 validation = _validate_processed_pair(config, input_path, working)
             except ExperimentError:
                 pass
@@ -885,7 +807,7 @@ def _process_segment(
                     reused=True,
                     recovered_working_file=True,
                 )
-        preserved_interrupted_file = _preserve_interrupted_file(working)
+        preserved_interrupted_file = _preserve_interrupted_path(working)
 
     config.restored_dir.mkdir(parents=True, exist_ok=True)
     config.reports_dir.mkdir(parents=True, exist_ok=True)
@@ -896,12 +818,11 @@ def _process_segment(
         build_jasna_command(config.jasna, input_path, working),
         log_path,
         mirror_output=mirror_output,
-        stop_on_software_decode=True,
         timeout_seconds=timeout_seconds,
         progress_stall_seconds=SEGMENT_STALL_SECONDS,
         idle_gpu_threshold_percent=idle_gpu_threshold_percent,
     )
-    decoder_backend = _require_hardware_decoder(log_path)
+    decoder_backend = _require_decoder(log_path)
     validation = _validate_processed_pair(config, input_path, working)
     working.replace(output)
     validation["output"] = str(output)
@@ -1086,7 +1007,7 @@ def _concat_and_verify(
                 source_origin_seconds,
             )
         except ExperimentError:
-            preserved_interrupted_file = _preserve_interrupted_file(working)
+            preserved_interrupted_file = _preserve_interrupted_path(working)
         else:
             working.replace(config.output)
             report["output"] = str(config.output)
@@ -1210,16 +1131,17 @@ def run_picture_workflow(
         final_report["informational_warnings"] = list(
             origin_evidence.get("informational_warnings", [])
         )
-    final_report = _persist_global_route_gate_evidence(
-        config,
-        final_report,
-        preflight.get("gate_lineage"),
-    )
+    # Technical success never records an inferred viewing decision, including
+    # when reusing a report produced under the former global-gate policy.
+    final_report.pop("route_gate", None)
+    final_report.update(release_status="candidate_for_human_review",
+                        human_review_status="pending", current_source_30m_human_reviewed=False)
+    _write_json(config.final_report_path, final_report)
     return {
         **final_report,
         "workflow_manifest": str(config.manifest_path),
         "workflow_config": manifest,
-        "gate_report": str(config.gate_report),
+        "gate_report": str(config.gate_report) if config.scope == "acceptance" else None,
         "gate_status": gate_report.get("status"),
         "preflight": preflight,
         "gpu_background_percent": gpu_background_percent,

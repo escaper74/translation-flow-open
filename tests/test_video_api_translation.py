@@ -141,6 +141,20 @@ class Harness:
 
 
 class VideoApiContractTests(unittest.TestCase):
+    @unittest.skipUnless(os.name == "nt", "Windows path boundary")
+    def test_deep_output_is_rejected_before_api_or_asr(self):
+        with tempfile.TemporaryDirectory() as raw:
+            for name in ("qwen", "deepseek"):
+                with self.subTest(provider=name):
+                    root = Path(raw)
+                    request = JobRequest.from_mapping(payload(root, name))
+                    request = replace(request, output_dir=root / ("long" * 35))
+                    harness = Harness(name)
+                    with self.assertRaisesRegex(ValueError, "输出目录过深"):
+                        harness.runner(request).run()
+                    self.assertEqual(0, harness.asr_calls)
+                    self.assertEqual([], harness.requests)
+
     def test_old_provider_serialization_and_explicit_new_defaults(self):
         sample = parse_srt(Path(__file__).parent / "fixtures" / "api-acceptance.ja.srt")
         self.assertEqual((8, 0, 45000), (len(sample), sample[0].start_ms, sample[-1].end_ms))

@@ -2,6 +2,22 @@
 
 > 本文介绍安装、运行模式、检查点恢复和结果验证。模块结构与技术路线见 [项目说明](PROJECT_BRIEF.md)。
 
+### 兼容性与恢复维护版（2026-11-04）
+
+本版合入已测试的输入兼容、任务恢复与字幕识别修复：
+
+- WMV8 等无法硬解码的输入，可使用 Jasna 内置 FFmpeg 软件解码后上传 CUDA，继续 GPU 画面处理；报告记录实际解码方式。
+- 普通画面任务按当前工具、引擎和媒体检查运行，不再要求历史 30 分钟验收报告；长时工程回归仍可显式执行。
+- 恢复时使用当前工具路径并复用已完成的识别、准备阶段和画面检查点；修正默认输出位置与缓存路径检查。
+- C 识别关闭跨窗口文字沿用，过滤缺少 A 同时间支持的大量重复幻觉，保留原始识别记录及完整 A 时间轴；已完成的 C 解码可直接重新过滤。
+- 修正 Codex 信息事件误判、队列编辑草稿被刷新覆盖，以及任务保存位置和失败原因显示。
+
+已完成相关离线回归、三段短片及两部整片的技术验证；用户另已测试新增输入兼容修复。自动报告的技术通过与每部成片的观看验收分别记录。
+
+任务进度显示改进、A+C 可选开关留待后续版本；本版不新增这两项功能，也不改变默认识别路线。
+
+升级时保留原输出目录、请求、缓存和检查点，重新打开桌面入口加载界面更新；不要通过重新投片代替恢复。正在运行的任务按原进程继续，不为升级中断。
+
 ## 0. 阅读导航
 
 | 现在想知道什么 | 直接看哪里 |
@@ -22,7 +38,7 @@
 
 先按 README 建立 Python 3.12 x64 的 `.venv` 并运行 `-ValidateOnly`。主程序只用标准库；C 识别在单独的虚拟环境中安装。配置样例 `config/local.example.psd1` 可复制成被忽略的 `config/local.psd1`，只接受静态字符串，不写 Key、`$env` 或 PowerShell 表达式。
 
-桌面 Python 顺序为显式参数/本地配置、项目 `.venv`、兼容已有用户的 Codex 内置 Python、PATH。没有 Codex 内置运行时不影响显式 Python 或 `.venv` 使用。桌面的工具根可由参数/本地配置指定；CLI 不读取 `local.psd1`，用 `--tool-root` 或当前进程的 `TRANSLATION_FLOW_TOOL_ROOT`。Jasna 和 Gate 的进程环境设置优先于本地配置。配置路径须指向当前机器实际安装的位置。
+桌面 Python 顺序为显式参数/本地配置、项目 `.venv`、兼容已有用户的 Codex 内置 Python、PATH。没有 Codex 内置运行时不影响显式 Python 或 `.venv` 使用。桌面的工具根可由参数/本地配置指定；CLI 不读取 `local.psd1`，用 `--tool-root` 或当前进程的 `TRANSLATION_FLOW_TOOL_ROOT`。Jasna 的进程环境设置优先于本地配置；窗口内可再修改。配置路径须指向当前机器实际安装的位置。
 
 ### 工具和模型的目录
 
@@ -67,41 +83,48 @@ powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\asr_fusion\set
 ```powershell
 & $Python -m translation_flow.diagnostics --mode video --provider codex --tool-root $Tools
 & $Python -m translation_flow.diagnostics --mode video --provider deepseek --tool-root $Tools --asr-a-model large-v3
-& $Python -m translation_flow.diagnostics --mode picture --tool-root $Tools --jasna 'C:\Tools\Jasna\jasna.exe' --acceptance-gate-report 'C:\TFWork\acceptance\reports\workflow-report.json'
+& $Python -m translation_flow.diagnostics --mode picture --tool-root $Tools --jasna 'C:\Tools\Jasna\jasna.exe'
 ```
 
-API 服务替换成实际所选的 provider。`missing_paths` 列出必须补齐的文件；`optional_checks` 单列开头校时组件，缺失时警告但不升级为运行 Gate。`paths_available` 不代表文件内容正确、C 依赖可导入、登录有效、GPU 就绪或 Gate 内容通过。这里不启动任何媒体工具/模型，也不发送服务请求。
+API 服务替换成实际所选的 provider。`missing_paths` 列出必须补齐的文件；`optional_checks` 单列开头校时组件，缺失时警告但不升级为运行 Gate。`paths_available` 不代表文件内容正确、C 依赖可导入、登录有效、GPU 就绪。这里不启动任何媒体工具/模型，也不发送服务请求。
 
-### 在新机器建立画面验收报告
+### 首次画面短样验证
 
-这是**之后由用户显式执行的 GPU/媒体验收**，不是打开软件时的自动步骤。先按 Jasna 0.10.0 安装说明完成本机引擎编译；本项目配置为 BasicVSR++ / lada-yolo-v4 / batch 4 / fp16 / clip 90 / overlap 8 / HEVC CQ28，无 secondary restoration。版本的默认模型可能不同，必须核对 `plan` 输出。七个引擎的精确路径由 `workflow-plan` 输出并由 `workflow-preflight` 检查；引擎须来自当前 GPU/工具组合，源码不携带它们。
+普通去马及双选任务不需要历史 `acceptance_report`。硬条件是当前工具、模型、TensorRT 引擎及输入输出路径可用；正式后端仍检查 Jasna 版本、引擎非空、实际解码方式、轨道、时长和接缝。技术通过不代表人工观看通过。
 
-1. 准备一部有权使用且至少 95 分钟的本地样片。短样命令的 60 秒窗口固定在 `01:34:00`；这是现有约束，不能用不足长度的短片冒充通过。
-2. 用下面只读计划检查源路径与工具。之后依次 `prepare-short`、`process-short`、`verify-short`，仅 GPU 步骤带确认开关。完成后人工观看 60 秒样片。
+先按 Jasna 0.10.0 的安装说明完成本机引擎编译。当前配置为 BasicVSR++ / lada-yolo-v4 / batch 4 / fp16 / clip 90 / overlap 8 / HEVC CQ28；七个引擎路径可用 `workflow-plan` 查看。引擎须来自当前 GPU/工具组合，源码不携带它们。
 
-   ```powershell
-   $Source = 'C:\Media\acceptance-input.mp4'   # 替换成你的样片
-   $Short = 'C:\TFWork\short-check'           # 新目录
-   $Jasna = 'C:\Tools\Jasna\jasna.exe'
-   $env:TRANSLATION_FLOW_TOOL_ROOT = $Tools
-   & $Python -m jasna_picture.cli plan --source $Source --work-dir $Short --jasna $Jasna
-   & $Python -m jasna_picture.cli run --source $Source --work-dir $Short --jasna $Jasna --step prepare-short
-   # 确认没有别的 GPU 工作、引擎已经编译好后才运行：
-   & $Python -m jasna_picture.cli run --source $Source --work-dir $Short --jasna $Jasna --step process-short --confirm-gpu-ready --confirm-engines-ready
-   & $Python -m jasna_picture.cli run --source $Source --work-dir $Short --jasna $Jasna --step verify-short
-   ```
+**桌面入口：** 设置 → 视频工具 → “首次画面验证：选择短视频”。选择有权使用的 30–60 秒本地短视频，确认只选去马、保存到新目录，点击开始。它复用普通去马队列和技术检查，保留原声音与已有字幕。先观看成片，再决定是否处理长片；程序不会将这次点击或技术完成写成“已人工验收”。
 
-3. 短样技术通过且观看认可后，以 `logs/verify-short.json` 放行 30 分钟 acceptance。起点可选，但样片必须覆盖完整窗口；例子用开头 30 分钟。先执行相同参数的 `workflow-plan`（只打印）和 `workflow-preflight`（运行版本/媒体探测，无模型推理）。确认 GPU 空闲和短样观感后，才把命令换成 `workflow-run` 并增加下面两个开关：
+**从较长视频抽取 60 秒：** 复用已有 CLI，`--short-start` 默认 `00:00:00`，可换成实际有内容的起点，各步骤须沿用同一个起点和新目录。源视频需要覆盖所选窗口，不再要求 95 分钟素材。以下操作由用户显式运行，会使用本地媒体工具；只有 `process-short` 使用 GPU。
 
-   ```powershell
-   & $Python -m jasna_picture.cli workflow-plan --scope acceptance --source $Source --start '00:00:00' --work-dir 'C:\TFWork\acceptance' --output 'C:\TFWork\acceptance.video-only.mkv' --gate-report (Join-Path $Short 'logs\verify-short.json') --jasna $Jasna
-   # workflow-preflight 使用上述同一组参数。
-   # workflow-run 使用上述参数，并加 --confirm-gpu-ready --confirm-gate-viewed。
-   ```
+```powershell
+$Source = 'C:\Media\sample-input.mp4'
+$Short = 'C:\TFWork\short-check'  # 新目录，保留旧结果
+$Jasna = 'C:\Tools\Jasna\jasna.exe'
+$env:TRANSLATION_FLOW_TOOL_ROOT = $Tools
+& $Python -m jasna_picture.cli plan --source $Source --work-dir $Short --jasna $Jasna --short-start '00:00:00'
+& $Python -m jasna_picture.cli run --source $Source --work-dir $Short --jasna $Jasna --short-start '00:00:00' --step prepare-short
+# 确认 Whisper A/C 等 GPU 工作已退出、引擎编译已完成后才执行：
+& $Python -m jasna_picture.cli run --source $Source --work-dir $Short --jasna $Jasna --short-start '00:00:00' --step process-short --confirm-gpu-ready --confirm-engines-ready
+& $Python -m jasna_picture.cli run --source $Source --work-dir $Short --jasna $Jasna --short-start '00:00:00' --step verify-short
+```
 
-4. 30 分钟技术通过并观看认可后，把实际生成的 `C:\TFWork\acceptance\reports\workflow-report.json` 填入本机 `AcceptanceGateReport`，再通过正式桌面处理新文件。完整模式还会核对报告 scope 与工具/路线。换硬件/工具后应重新核实相应证据，不复制个人旧报告、不手写通过状态。
+观看 `outputs/short_restored.mkv`，技术记录为 `logs/verify-short.json`。CLI 短样只交付视频轨；声音、字幕与最终封装通过桌面短视频另验。它不证明长片质量或持续运行稳定性，不必复制报告到固定工具目录。
 
-本项目没有“一键安装全部工具并为新 GPU 自动验收”的功能。完整下载、驱动兼容、引擎编译和本机人工验收需分别完成，不能用路径检查或离线测试代替。
+### 可选的 30 分钟工程回归
+
+需要验证长时稳定性和分段接缝时，再使用覆盖完整 30 分钟窗口的素材。它是显式工程回归，不是普通新用户开始任务的前置要求。短样技术通过并由用户观看认可后：
+
+```powershell
+& $Python -m jasna_picture.cli workflow-plan --scope acceptance --source $Source --start '00:00:00' --work-dir 'C:\TFWork\acceptance' --output 'C:\TFWork\acceptance.video-only.mkv' --gate-report (Join-Path $Short 'logs\verify-short.json') --jasna $Jasna
+# workflow-preflight 使用同一组参数，检查版本、引擎和媒体，不运行模型。
+# 决定运行时改用 workflow-run，增加 --confirm-gpu-ready --confirm-gate-viewed。
+```
+
+`acceptance/reports/workflow-report.json` 保留技术证据，观看结论单独记录。无需填写 `AcceptanceGateReport` 才能处理普通任务。旧配置、请求与 manifest 中的 Gate 字段仅为旧任务恢复保留，不读取为普通准入条件，也不自动证明当前素材获人工认可。
+
+本项目没有一键安装全部组件或自动验收新 GPU 的功能。下载、驱动、引擎编译和本机观看需分别完成；路径检查及离线测试不能代替它们。
 
 ## 1. 桌面入口与运行模式
 
@@ -141,19 +164,21 @@ API 服务替换成实际所选的 provider。`missing_paths` 列出必须补齐
 
 后端默认从当前项目的 `workflow/tools` 定位既有固定工具布局。换机器或在另一份源码目录复用现有工具时，使用 `--tool-root <工具根目录>`，或在本次终端设置 `TRANSLATION_FLOW_TOOL_ROOT`。多份源码可以共享同一工具目录，无需复制大型模型。
 
-桌面启动时也会读取 Git 已忽略的 `config/local.psd1`，仅消费 `PythonPath`、`ToolRoot`、`JasnaPath`、`AcceptanceGateReport` 四个本机路径。Python/工具根的显式启动参数优先；Jasna/验收报告的既有进程环境优先。本地配置不放 Key，不进入源码留档；命令行后端仍使用自己的参数/环境配置。升级代码时保留本地配置，避免改变工具、模型或验收报告。
+桌面启动时读取 Git 已忽略的 `config/local.psd1` 中的 `PythonPath`、`ToolRoot`、`JasnaPath`。Python/工具根的显式启动参数优先；Jasna 的既有进程环境优先。设置 → 模型与本地工具可修改 Python、工具根和 Jasna；每个新任务保存本次解析出的路径，常驻后台启动新任务时使用这些值，已入队的任务保持原配置。旧 `AcceptanceGateReport` 只为恢复旧 manifest 保留。配置不放 Key，不进入 Git；CLI 使用自己的参数/环境配置。
 
-完整流程另支持 `--jasna <jasna.exe>`、`--acceptance-gate-report <既有通过报告.json>`，对应环境变量为 `TRANSLATION_FLOW_JASNA`、`TRANSLATION_FLOW_ACCEPTANCE_REPORT`。未配置时分别定位工具根下的 `jasna/jasna.exe` 与 `acceptance/workflow-report.json`。原有工具版本、模型和验收检查保持；诊断不会生成验收报告，也不确认报告内容已通过。
+完整流程支持 `--jasna <jasna.exe>` 或 `TRANSLATION_FLOW_JASNA`，默认工具根下的 `jasna/jasna.exe`。普通模式不检查历史验收报告。旧 `--acceptance-gate-report` / `TRANSLATION_FLOW_ACCEPTANCE_REPORT` 仅保留原任务元数据身份，不能作为当前人工验收证据。
 
 只检查环境、不运行翻译或媒体：
 
 ```powershell
 python -m translation_flow.diagnostics --mode srt --provider codex
 python -m translation_flow.diagnostics --mode video --provider qwen --tool-root "已有工具根目录"
-python -m translation_flow.diagnostics --mode full --provider codex --tool-root "已有工具根目录" --jasna "已有jasna.exe" --acceptance-gate-report "既有通过报告.json"
+python -m translation_flow.diagnostics --mode full --provider codex --tool-root "已有工具根目录" --jasna "已有jasna.exe"
 ```
 
 `paths_available` 只证明列出的路径存在；`missing_paths` 会列出缺失项并退出 1。不会验证登录、API 连通、GPU 或模型完整性，不读取 Key 值、不下载或安装依赖。独立 SRT 的 API 模式只需要项目 Python；Codex 模式还需要官方 CLI 及用户另行完成的本机登录。
+
+新任务默认保存到 Windows“视频”目录中的 `TranslationFlow`，不再随源码目录加深。启动脚本支持 `-OutputDirectory <输出目录>` 覆盖该默认值。开始前先检查保存目录可写，以及当前模式的字幕批次缓存路径是否超过 Windows 限制，再检查登录和服务；后端使用同一缓存路径规则。该参数不改写已排队任务的请求或检查点；更换保存位置需要新建任务。
 
 ### 1.2 字幕翻译小样
 
@@ -166,7 +191,7 @@ python -m translation_flow.diagnostics --mode full --provider codex --tool-root 
 
 ### 1.3 通用队列与后台接口
 
-桌面可多选或拖入多个文件，确认本批授权后顺序处理。在进度页停止只影响当前文件；“任务”页可以暂停后续项或停止并保留全部进度。任务交给后台并确认后可关闭窗口，重新打开同一源码目录的入口会接回队列；没有设置开机自启。恢复使用原请求和设置，同一后台仍保留本次 Key 时可以直接继续，后台重启后再填写；若要更换设置，应新建任务。
+桌面可多选或拖入多个文件，确认本批授权后顺序处理。已有任务运行时，可点“新建”继续选文件、编辑并加入队列；后台刷新和旧任务的完成/失败/停止不替换正在编辑的草稿。提交被拒时保留文件与设置供重试。在进度页停止只影响当前文件；“任务”页可以暂停后续项或停止并保留全部进度。任务交给后台并确认后可关闭窗口，重新打开同一源码目录的入口会接回队列；没有设置开机自启。恢复使用原请求和设置，同一后台仍保留本次 Key 时可以直接继续，后台重启后再填写；若要更换设置，应新建任务。
 
 更新桌面脚本后，关闭旧窗口并从正式入口重开以加载新代码；已交给后台的任务继续运行。仅重开窗口不会热加载后台 Python，更新后台应等任务安全结束后使用正式 shutdown 接口，不为升级打断任务。不要直接改 queue.json 或请求文件。历史列表的“按原请求继续”还原设置并显示本次确认页；只有请求记录、尚未入队的任务也走这条路径。
 
@@ -185,7 +210,7 @@ python -m translation_flow.diagnostics --mode full --provider codex --tool-root 
 | action | 输入 | 行为 |
 |---|---|---|
 | `status` | 无其他必需字段 | 返回队列、后台 PID、代码目录与 Python 路径；不启动媒体任务 |
-| `enqueue` | `items:[{request_path, tool_root?, api_key?}]`；含字幕任务必须 `authorized:true` | 无法读取或解析的请求单独跳过，有效请求顺序入队并返回 `submission`；同一正式请求重复提交不重启；不会解除已暂停的队列，暂停期间新增项标记 `paused`。桌面开始按钮另用 `resume` 启动本次 `submission.added` |
+| `enqueue` | `items:[{request_path, tool_root?, python_path?, jasna_path?, api_key?}]`；含字幕任务必须 `authorized:true` | 无法读取或解析的请求单独跳过，有效请求顺序入队并返回 `submission`；同一正式请求重复提交不重启；不会解除已暂停的队列，暂停期间新增项标记 `paused`。桌面开始按钮另用 `resume` 启动本次 `submission.added` |
 | `stop` | 可选 `id` | 有 ID 只停所选项；无 ID 停当前项并暂停等待项；当前项显示 `stopping`，等待后端安全结束 |
 | `pause` | 可选 `id` | 暂停等待项；不打断已经开始的任务 |
 | `resume` | `ids:[...]`；字幕任务必须 `authorized:true`，API Key 通过可选 `credentials:{队列id:本次key}` | 核对原请求未变，重排所选失败/停止/暂停项；同一后台进程内省略或留空 Key 会复用本次 Key，提供新 Key 则替换；未选中的暂停项不恢复；已完成项不重跑 |
@@ -211,7 +236,7 @@ Key 通过 QueueBridge 的 UTF-8 stdin 与仅监听 `127.0.0.1` 的随机鉴权�
 2. 翻译风格；
 3. 本次供应商和模型；
 4. 本次只外发字幕文本的授权；
-5. 完整工作流使用的Jasna 配置是否已有一次通过技术检查和人工观看的 30 分钟全局路线 Gate；
+5. 画面工具与引擎是否已安装，并先用短视频确认本机可运行；
 6. Whisper A/C 完成并退出后，画面才能使用 GPU。
 
 Codex 不填 Key，使用官方 CLI 的本机 ChatGPT 登录与账户额度。新版提供“登录 ChatGPT”“重新检测”，找不到程序时提供官方安装说明；登录按钮启动官方浏览器授权，完成后自动重查，不索取、读取或保存账号密码。CLI 优先从 PATH 定位，Windows 桌面应用的标准版本目录作为后备，不固定版本哈希。在隔离工具沙箱中查不到登录，并不等于普通桌面身份未登录，应以正常本机身份检查。只读诊断仍为 `python -m translation_flow.cli --codex-status` 或 `codex login status`；“已登录”只证明认证状态，不代表已获得服务响应。
@@ -246,7 +271,7 @@ Whisper A → Whisper C → A+C 融合 → 融合 SRT 正式结构检查
 2. 极短供应商连接检查；
 3. Whisper A；
 4. A 退出并记录 GPU released；
-5. Whisper C；
+5. Whisper C（不把上一窗口的识别文字带入下一窗口，降低长片重复传播；解码设置记入 C 转录报告）；
 6. C 退出并记录 GPU released；
 7. A+C 保守融合，并对新任务执行有证据支持的开头局部校时（不改文字与后续时间）；
 8. 在任何外部翻译前重新验证融合 SRT，并通知顶层启动画面分支；
@@ -349,10 +374,10 @@ API 任务的恢复继续使用同一 job_id、源片和公开配置：
 
 验证使用独立输出，不接管正在运行的任务。
 
-**Codex 总流程。** 沿用第 3.1.2 节的视频请求，把 provider 设为 `{"id":"codex","host":"chatgpt.com","model":"cli-default"}`，`workflow_mode` 设为 `translation_picture_final`，并按本次选择填写已有 `consent` 和 `gates.picture_and_mux_30m_human_accepted`。运行命令为：
+**Codex 总流程。** 沿用第 3.1.2 节的视频请求，把 provider 设为 `{"id":"codex","host":"chatgpt.com","model":"cli-default"}`，`workflow_mode` 设为 `translation_picture_final`，并按本次真实授权填写 `consent`；新任务可省略 `gates`，不能填写未经用户确认的观看结论。运行命令为：
 
 ```powershell
-python -m full_workflow.cli --request "本次请求.json" --tool-root "已有工具根目录" --jasna "已有jasna.exe" --acceptance-gate-report "既有通过报告.json"
+python -m full_workflow.cli --request "本次请求.json" --tool-root "已有工具根目录" --jasna "已有jasna.exe"
 ```
 
 Codex 不填 Key；A/C 退出、融合结构验证通过后，原有总流程开始另一分支，Codex 则进行源文审查/翻译。恢复验证 A/C/fusion、审查报告、独立日文参考及中文字幕的对应关系。只有封装未完成时不需要重新登录或识别；总流程的可选 MP4 只在最终 MKV 后追加，原画支线不再另做一次 MP4。
@@ -367,11 +392,11 @@ Codex 不填 Key；A/C 退出、融合结构验证通过后，原有总流程开
 
 ### 3.2 画面
 
-1. 收到已验证的 A+C 正式交接后，校验 30 分钟全局路线 Gate 已通过、`scope=acceptance`，且 Jasna 工具/模型/编码参数与配置的处理参数一致；Gate 与当前源片是否同源只记录为信息性证据；
+1. 收到已验证的 A+C 正式交接后，检查当前工具版本、七个非空 TensorRT 引擎和源片，不要求历史验收报告；
 2. 读取源片首批视频 packet，跳过 discard 预卷，记录首个可呈现 PTS；
 3. 将源视频 stream-copy 为约 15 分钟单视频段；
 4. Jasna 顺序处理，每段直接输出最终 HEVC；
-5. 每段检查单视频轨、编码、尺寸、帧率、时长、硬解码证据；
+5. 每段检查单视频轨、编码、尺寸、帧率、时长、已知解码方式证据；
 6. 完成段和段报告同时成立后才可成为检查点；
 7. stream-copy 拼接完成段；
 8. 检查总时长、统一流参数和开头/全部接缝/结尾解码；
@@ -382,10 +407,10 @@ Codex 不填 Key；A/C 退出、融合结构验证通过后，原有总流程开
 ```powershell
 .\scripts\run-jasna-picture.cmd workflow-plan <参数>
 .\scripts\run-jasna-picture.cmd workflow-preflight <同一组参数>
-.\scripts\run-jasna-picture.cmd workflow-run <同一组参数> --confirm-gpu-ready --confirm-gate-viewed
+.\scripts\run-jasna-picture.cmd workflow-run <同一组参数> --confirm-gpu-ready
 ```
 
-整片 `scope=full` 必须从源片开头处理，并读取一份与处理参数匹配的 `scope=acceptance` 全局 Gate 报告。每部新源片的 30 分钟样片是可选质量检查，不是整片前置硬门；报告必须明确区分“路线已验收”与“当前源片已逐片验收”。具体参数以 `--help` 为准，不在文档复制机器路径。
+整片 `scope=full` 从源片开头处理，不要求 `--gate-report` 或观看确认开关。`scope=acceptance` 才要求短样技术报告与 `--confirm-gate-viewed`；历史报告不能替当前成片作观看决定。具体参数以 `--help` 为准。
 
 ### 3.3 最终汇合
 
@@ -432,7 +457,7 @@ MP4 静态规划或 FFmpeg 预检失败时，界面必须明确显示“需要�
 
 ### 3.5 本地任务中心
 
-任务中心默认读取项目 `deliverables`，选择其他输出目录后只读取该目录下的：
+任务中心读取当前保存目录（默认是 Windows“视频”目录中的 `TranslationFlow`）；已有项目 `deliverables` 中的任务可通过选择该目录查看。只读取所选目录下的：
 
 - `.translation-flow/<job-id>/request.json`、`events.jsonl`、`job.result.json`；
 - `.full-workflow/<job-id>/request.json`、`events.jsonl`、`workflow.json`、`workflow.result.json`；
@@ -450,14 +475,16 @@ MP4 静态规划或 FFmpeg 预检失败时，界面必须明确显示“需要�
 - 完整翻译报告、SRT、原画 MKV 和技术报告全部匹配时，后续恢复可无 Key 复用。
 - 不完整翻译或需要新外部调用时，仍须重新取得当次字幕授权；Codex 需有效 ChatGPT 登录，DeepSeek 需 Key。
 - 桌面的“停止并保留进度”写入该任务的 `cancel.requested`。Codex、六家 API 及完整流程均支持该标记和 Ctrl+C；具体安全停止边界见 3.1.4。CLI 发出 `job_cancelled` 并退出 2，同任务恢复清除旧信号并复用成功批次。Codex 登录失效或额度限制保留批次，绝不回退付费 API。
+- Codex CLI 的计划记录（todo_list）和 item 级可恢复错误提示只作为过程信息，不按工具执行拒收；仍必须有成功完成回合和有效最终文本。命令执行、文件改动、MCP、网页搜索及未知事件类型继续拒收，错误中只记录类型名称，不记录指令、字幕或原始回复。
 - Codex 的 `source-review.pointer.json` 指向独立日文参考与源文审查，`translation.report.json` 包含译文摘要和逐批疑点。完成翻译恢复校验源身份、SRT 摘要、对应报告及 MKV 文件状态；仅追加 MP4 不改变核心任务身份。不要手工修改这些文件。
 - 画面在 A+C 后已经完成、但翻译分支失败时，下一次恢复复用画面正式报告，不重跑已完成画面。
 
 ### 画面
 
 - 只有完成段与 `technical_checks_passed` 段报告成对存在时才复用。
-- prepare 媒体已经成功但报告未落盘时，只有正式日志返回 0、分段连续、参数一致且总时长通过，workflow 才能补建 checkpoint。
-- 媒体已完成但报告未发布时，workflow 会重新核对成功日志、硬解码证据、轨道、编码、时长与抽点解码；成立的 `.working.mkv` 或无报告成品自动晋升并补建正式报告。
+- prepare 媒体已经成功但报告未落盘时，只有最近一次抽取日志返回 0、分段连续、参数一致且总时长通过，workflow 才能补建 checkpoint。
+- 未完成的 prepare（缺段、截断或失败日志）会将该次输入段目录改名为 `.interrupted-*` 保留，再重新执行流复制切段；完成报告仍正常复用。如果已有下游画面产物而准备状态矛盾，则保留现场并停止，不重建其输入。
+- 媒体已完成但报告未发布时，workflow 会重新核对成功日志、已知解码方式证据、轨道、编码、时长与抽点解码；成立的 `.working.mkv` 或无报告成品自动晋升并补建正式报告。
 - 不能证明完整的 `.working.mkv` 不删除、不冒充完成；自动改名为 `.interrupted-*` 保留后，只重跑当前段或最终拼接。损坏容器和不连续分段仍拒绝复用。
 - 旧任务如果仅因 Gate 与新源片不同源而在 picture/final 产物产生前失败，修正正式 Gate 政策后从同一入口恢复；必须重新验证已完成翻译谱系，不手改 manifest，不重跑 API/Whisper。
 - 完整工作流恢复时，桌面入口可不填 API Key；后端只有在正式翻译结果通过谱系验证后才复用并继续画面/汇合，否则在 Whisper、画面和外部调用前明确停止。DeepSeek 仅翻译新任务仍必须提供当次 API Key。
@@ -467,6 +494,16 @@ MP4 静态规划或 FFmpeg 预检失败时，界面必须明确显示“需要�
 
 - 只有输入谱系、源起点、接缝、输出媒体和技术报告全部匹配时才复用完成结果。
 - 最终候选只在所有技术检查通过后发布。
+
+### 编码兼容解码
+
+WMV8（wmv2）等编码可能无法使用 VALI / NVDEC。Jasna 可用 FFmpeg 在 CPU 解码，再把画面送到 CUDA；检测、修复和输出编码仍沿用原 GPU 路线。正式流程允许这一内置兼容路径，不因软件解码提示终止，也不额外转码整片输入。CPU 占用和处理速度可能改变。
+
+段报告的 `decoder_backend` 如实记录 `vali-nvdec`、`pyav-cuda` 或 `ffmpeg-software-cuda`；完成段和报告可正常复用。进程失败、缺少解码证据或媒体检查不通过仍保留现场并停止。遇到旧版“软件解码已终止”报错，更新后从原任务继续，复用已完成字幕和分段，不重新投片。
+
+### 修正本地工具后继续
+
+在“更多设置 → 本地工具”修正 Python、工具根或 Jasna 路径，再从队列选择原任务继续。恢复会把当前工具路径交给后台，沿用原请求及已完成检查点；源片、输出目录、供应商、模型和风格仍按原请求校验。重复点击入队不会重启或改写已有任务。
 
 ### 失败处理
 
@@ -482,13 +519,17 @@ MP4 静态规划或 FFmpeg 预检失败时，界面必须明确显示“需要�
 
 禁止手工修改字幕、缓存、manifest、报告或中间媒体来冒充正式恢复。
 
+用户已授权自动剔除 C 的重复型幻觉候选：同一不少于 5 字的文本至少出现 50 次、占比至少 18%，且同时间 A 文本支持不超过 20% 时，删除该模式及受这些模型片段污染的 C 候选；保留所有 A 条目和时间轴，原始 C 不删除。A 支持的真实重复和零星重复不按幻觉删除。过滤动作写入 `C.repetition-filter.json` 并发出摘要；剩余 C 与最终融合仍走质量检查。C 全被过滤时使用 A 骨架，报告必须解释空候选；不把文本判断称为听音确认。
+
+原任务恢复时，A 沿用既有成功分块，已完整落盘的 C 模型结果直接重新过滤，不重复识别。正式流程把旧 C 目录另存为 `C.interrupted-NN`，保留原识别和失败报告；新目录保留识别原稿 `C.recognized.ja.srt` 和过滤后的 `C.ja.srt`。已完整通过的 ASR 检查点按原身份复用，不因规则更新重跑。
+
 ### 自动化优先的异常分级
 
 目标是尽量稳定地产出可观看候选，而不是让轻微对齐和展示偏差把整条流卡死：
 
 | 级别 | 处理 | 当前范围 |
 |---|---|---|
-| 硬停止 | 保留现场，不发布候选 | 源片/manifest 谱系冲突；工具真实失败；媒体或字幕不可解析；关键轨道缺失；覆盖源片或已有结果；外部调用没有当次授权/Key；翻译 ID、数量、时间码不一致；ASR 严重重复坍塌 |
+| 硬停止 | 保留现场，不发布候选 | 源片/manifest 谱系冲突；工具真实失败；媒体或字幕不可解析；关键轨道缺失；覆盖源片或已有结果；外部调用没有当次授权/Key；翻译 ID、数量、时间码不一致；A 或最终融合严重重复坍塌；过滤后仍不合格的 C |
 | 自动修复 | 写明动作后继续 | 清理空文本、零/负时长 cue；验证并晋升已完成工作文件；不能证明完整时改名保留并重跑当前媒体步骤；负的可呈现起点按输出零轴夹到 0 并保留原始证据 |
 | 警告后继续 | 写入事件、阶段报告和顶层结果 | cue 轻微重叠、行数/行长/单条时长、少量超出源时长、可播放的容器时长偏差、报告数值的小舍入差 |
 
@@ -513,7 +554,7 @@ MP4 静态规划或 FFmpeg 预检失败时，界面必须明确显示“需要�
 
 ### 画面机器检查
 
-- 工具、引擎和硬解码路线通过预检；
+- 工具和引擎通过预检，处理日志记录已知解码方式；
 - 每段有匹配的输入/输出时长和统一流参数；
 - 最终视频恰好一条主视频轨；
 - 段总量和整片时长无明显缺失；
@@ -593,7 +634,7 @@ GPU 利用率和显存只作诊断。整卡采样包含桌面及其他进程，�
 
 ### 任务中心与可选 MP4
 
-任务中心从正式任务目录生成列表，不另建状态库。恢复不绕过供应商、源片谱系、授权或检查点规则。MP4 是最终 MKV 后的独立交付层，成功、复用与失败分别记录；MP4 失败不会把已通过的 MKV 改为失败。
+任务中心从正式任务目录生成列表，不另建状态库。任务卡显示保存位置，以区分同名源片的不同任务；失败页直接保留具体错误，通用恢复提示不能遮掉失败原因。恢复不绕过供应商、源片谱系、授权或检查点规则。MP4 是最终 MKV 后的独立交付层，成功、复用与失败分别记录；MP4 失败不会把已通过的 MKV 改为失败。
 
 ## 9. 阶段计时、模型选择与开头校时
 

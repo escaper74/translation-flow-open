@@ -70,7 +70,7 @@ namespace TranslationFlow
             Start(pythonPath, workingDirectory, requestPath, apiKey, backendModule, "");
         }
 
-        public void Start(string pythonPath, string workingDirectory, string requestPath, string apiKey, string backendModule, string toolRoot)
+        public void Start(string pythonPath, string workingDirectory, string requestPath, string apiKey, string backendModule, string toolRoot, string jasnaPath = "")
         {
             if (backendModule != "translation_flow.cli" &&
                 backendModule != "full_workflow.cli" &&
@@ -90,7 +90,10 @@ namespace TranslationFlow
                 commandPrefix = "-m translation_flow.srt_desktop --request ";
             else
                 commandPrefix = "-m media_planning.cli --request ";
-            StartCommand(pythonPath, workingDirectory, commandPrefix + QuoteArgument(requestPath), apiKey, toolRoot);
+            string arguments = commandPrefix + QuoteArgument(requestPath);
+            if ((backendModule == "full_workflow.cli" || backendModule == "full_workflow.picture_cli") && !String.IsNullOrWhiteSpace(jasnaPath))
+                arguments += " --jasna " + QuoteArgument(jasnaPath);
+            StartCommand(pythonPath, workingDirectory, arguments, apiKey, toolRoot);
         }
 
         public void StartCodexStatus(string pythonPath, string workingDirectory)
@@ -118,12 +121,14 @@ namespace TranslationFlow
 
         public void StartReadiness(string pythonPath, string workingDirectory, string mode,
                                    string provider, string model, string endpoint, string tokenCap,
-                                   string toolRoot, string apiKey)
+                                   string toolRoot, string apiKey, string jasnaPath, string asrModel, string outputDirectory)
         {
             string args = "-m translation_flow.desktop_access --check --probe --mode " + QuoteArgument(mode)
                 + " --provider " + QuoteArgument(provider) + " --model " + QuoteArgument(model);
             if (!String.IsNullOrWhiteSpace(endpoint)) args += " --endpoint " + QuoteArgument(endpoint);
             if (!String.IsNullOrWhiteSpace(tokenCap)) args += " --max-output-tokens " + QuoteArgument(tokenCap);
+            args += " --jasna " + QuoteArgument(jasnaPath) + " --asr-a-model " + QuoteArgument(asrModel);
+            args += " --output-dir " + QuoteArgument(outputDirectory);
             StartCommand(pythonPath, workingDirectory, args, apiKey, toolRoot);
         }
 
@@ -213,7 +218,8 @@ function Start-TranslationFlowBackend {
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ApiKey,
         [ValidateSet("translation_flow.cli", "full_workflow.cli", "full_workflow.picture_cli", "media_planning.cli", "translation_flow.srt_desktop")]
         [string]$BackendModule = "translation_flow.cli",
-        [string]$ToolRoot = ""
+        [string]$ToolRoot = "",
+        [string]$JasnaPath = ""
     )
 
     $providerId = "deepseek"
@@ -233,7 +239,7 @@ function Start-TranslationFlowBackend {
 
     $bridge = New-Object TranslationFlow.ProcessBridge
     try {
-        $bridge.Start($PythonPath, $WorkingDirectory, $RequestPath, $ApiKey, $BackendModule, $ToolRoot)
+        $bridge.Start($PythonPath, $WorkingDirectory, $RequestPath, $ApiKey, $BackendModule, $ToolRoot, $JasnaPath)
         return $bridge
     }
     catch {

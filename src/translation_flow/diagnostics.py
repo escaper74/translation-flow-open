@@ -8,7 +8,8 @@ from pathlib import Path
 import sys
 
 from .asr import ToolPaths
-from .runtime import tool_root, jasna_path, acceptance_report
+from .runtime import tool_root, jasna_path
+from jasna_picture.workflow import required_engine_paths
 from .translation.api_providers import API_PROVIDERS
 from .codex_runtime import resolve_codex_executable
 
@@ -30,7 +31,8 @@ def inspect_environment(*, mode="video", provider="codex", tools=None, jasna=Non
     if provider == "codex" and mode not in ("repackage", "picture"):
         paths["codex_cli"] = resolve_codex_executable()
     if mode in ("full", "picture"):
-        paths.update(jasna=jasna_path(jasna, tools=root), acceptance_report=acceptance_report(gate, tools=root))
+        paths["jasna"] = jasna_path(jasna, tools=root)
+        paths.update({f"TensorRT: {engine.name}": engine for engine in required_engine_paths(paths["jasna"])})
     checks = [{"name": name, "path": str(path) if path else None,
                "present": bool(path and (Path(path).is_dir() if name == "faster_model" else Path(path).is_file()))}
               for name, path in paths.items()]
@@ -58,7 +60,7 @@ def main(argv=None):
     parser.add_argument("--asr-a-model", choices=("large-v3", "large-v3-turbo"),
                         default="large-v3-turbo", help="与桌面新任务默认一致；旧请求通常使用 large-v3。")
     parser.add_argument("--jasna", type=Path)
-    parser.add_argument("--acceptance-gate-report", type=Path)
+    parser.add_argument("--acceptance-gate-report", type=Path, help=argparse.SUPPRESS)  # legacy callers
     args = parser.parse_args(argv)
     result = inspect_environment(mode=args.mode, provider=args.provider, tools=args.tool_root,
                                  jasna=args.jasna, gate=args.acceptance_gate_report,

@@ -78,7 +78,7 @@ def _c_short_repetition(
         )
         for cue in matching
     )
-    c_ratio = count / len(candidates)
+    c_ratio = count / max(len(candidates), 1)
     support_ratio = supported / count if count else 0.0
     degraded = (
         len(candidates) >= SHORT_REPETITION_POLICY["minimum_c_cues"]
@@ -168,7 +168,9 @@ def prepare_codex_source(
         original_report = json.loads(report_path.read_text(encoding="utf-8-sig"))
     asr_root = report_path.resolve().parent
     a_path, c_path = asr_root / "A/A.ja.srt", asr_root / "C/C.ja.srt"
-    backbone, candidates, fused = parse_srt(a_path), parse_srt(c_path), parse_srt(fused_path)
+    backbone, candidates, fused = parse_srt(a_path), parse_srt(c_path, allow_empty=True), parse_srt(fused_path)
+    if not candidates and not original_report.get("c_repetition_filter", {}).get("removed_cues"):
+        raise ValueError("source review has an unexplained empty C checkpoint")
     validate_timeline(backbone, fused)
     if any(not cue.text.strip() for cue in (*backbone, *candidates, *fused)):
         raise ValueError("source review requires nonempty A, C and fusion text")

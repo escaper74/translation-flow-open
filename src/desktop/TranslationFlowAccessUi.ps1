@@ -21,7 +21,7 @@ function Start-DesktopAccess([ValidateSet('login','check')][string]$Action) {
             $endpoint = ''; $cap = ''
             if ($settings.Id -notin @('codex','deepseek')) { $endpoint=[string]$settings.EndpointProfile; $cap=[string]$settings.MaxOutputTokens }
             $script:AccessBridge.StartReadiness($python, $ProjectRoot, $checkMode, $settings.Id,
-                $settings.Model, $endpoint, $cap, $ToolRootBox.Text.Trim(), $ApiKeyBox.Password)
+                $settings.Model, $endpoint, $cap, (Get-TaskToolRoot), $ApiKeyBox.Password, (Get-TaskJasnaPath), $script:CurrentWhisperAModel, $OutputDirectoryBox.Text)
         }
         Set-InputEnabled $false
     } catch {

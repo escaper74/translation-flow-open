@@ -10,6 +10,7 @@ import hashlib
 import json
 import os
 from pathlib import Path
+import re
 import shutil
 import subprocess
 import tempfile
@@ -277,10 +278,18 @@ class CodexProvider:
                         events.append(event)
                 except json.JSONDecodeError:
                     continue
-            forbidden = [e.get("item", {}).get("type") for e in events
-                         if e.get("item", {}).get("type") not in (None, "agent_message", "reasoning")]
+            item_types = [e.get("item", {}).get("type") for e in events]
+            # CLI plan bookkeeping and item-level errors are informational.
+            # A successful turn and valid final text are still required below.
+            forbidden = [kind for kind in item_types
+                         if kind not in (None, "agent_message", "reasoning", "todo_list", "error")]
             if forbidden:
-                raise FatalProviderError("Codex 返回了字幕文本之外的工具活动；本批未被接受。")
+                labels = sorted({kind if isinstance(kind, str) and re.fullmatch(r"[a-z_]{1,64}", kind)
+                                 else "unknown" for kind in forbidden})
+                raise FatalProviderError(
+                    "Codex 返回了字幕文本之外的工具活动或不支持的事件类型（"
+                    + "、".join(labels[:8]) + "）；本批未被接受。"
+                )
             if process.returncode != 0 or any(e.get("type") in ("error", "turn.failed") for e in events):
                 raise self._failure(stdout + "\n" + stderr)
             if not any(e.get("type") == "turn.completed" for e in events) or not output.is_file():
@@ -294,7 +303,7 @@ class CodexProvider:
                     "prompt_sha256": hashlib.sha256(instruction.encode("utf-8")).hexdigest(),
                     "elapsed_seconds": round(time.monotonic() - started, 3),
                     "usage": [e["usage"] for e in events if isinstance(e.get("usage"), dict)],
-                    "tool_items": 0}
+                    "tool_items": 0, "item_types": sorted({kind for kind in item_types if kind is not None})}
         if json_output:
             try:
                 payload = json.loads(content)

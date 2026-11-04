@@ -234,6 +234,9 @@ class TranslationFlowRunner:
                 if target.exists():
                     raise FileExistsError(f"拒绝覆盖已有结果：{target}")
         translation_checkpoint = chinese_srt.is_file() and translation_report.is_file()
+        if not translation_checkpoint:
+            from .translation.pipeline import validate_cache_path
+            validate_cache_path(self.job_root / "translations")
         if chinese_srt.exists() != translation_report.exists():
             raise FileExistsError("中文字幕与翻译报告不完整，拒绝混用残缺终态")
         if package_checkpoint and not translation_checkpoint:

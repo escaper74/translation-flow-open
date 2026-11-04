@@ -60,6 +60,35 @@ class DesktopAccessTests(unittest.TestCase):
         self.assertTrue(run.call_args.kwargs['capture_output'])
         self.assertNotIn('private', json.dumps(result))
 
+    @unittest.skipUnless(os.name == "nt", "Windows path boundary")
+    def test_deep_output_blocks_service_then_short_output_is_ready(self):
+        with tempfile.TemporaryDirectory() as raw, patch.object(access, "inspect_environment", return_value={"checks": []}), patch.object(
+            access, "create_api_provider"
+        ) as factory:
+            root = Path(raw)
+            long_output = root / ("long" * 35)
+            result = access.check_readiness(mode="full", provider="qwen", api_key="fixture", probe=True, output_dir=long_output)
+            self.assertEqual("blocked", result["status"])
+            self.assertIn("输出目录过深", result["message"])
+            self.assertFalse(long_output.exists())
+            factory.assert_not_called()
+            output = root / "out"
+            result = access.check_readiness(mode="full", provider="qwen", api_key="fixture", probe=True, output_dir=output)
+            self.assertEqual("ready", result["status"])
+            factory.return_value.check_connection.assert_called_once()
+            self.assertEqual([], list(output.iterdir()))
+
+    def test_unusable_output_blocks_login_and_probe(self):
+        with tempfile.TemporaryDirectory() as raw:
+            output = Path(raw) / "not-a-directory"
+            output.write_bytes(b"existing file")
+            with patch.object(access, "codex_status") as status, patch.object(access, "CodexProvider") as provider:
+                result = access.check_readiness(mode="srt", provider="codex", probe=True, output_dir=output)
+            self.assertEqual("blocked", result["status"])
+            status.assert_not_called()
+            provider.assert_not_called()
+            self.assertEqual(b"existing file", output.read_bytes())
+
     def test_missing_tools_prevent_any_service_request(self):
         with patch.object(access, 'inspect_environment', return_value={'checks': [{'name': 'whisper', 'present': False}]}), patch.object(access, 'create_api_provider') as factory, patch.object(access, 'CodexProvider') as codex:
             result = access.check_readiness(mode='video', provider='codex', probe=True)
@@ -102,9 +131,10 @@ class DesktopAccessTests(unittest.TestCase):
         def inspect(**kwargs):
             self.assertNotIn('SUBTITLE_API_KEY', os.environ)
             self.assertEqual('test-key', kwargs['api_key'])
+            self.assertEqual('fixture-output', kwargs['output_dir'])
             return {'status': 'ready'}
         with patch.dict(os.environ, {'SUBTITLE_API_KEY': 'test-key'}), patch.object(access, 'check_readiness', side_effect=inspect), patch('sys.stdout', new_callable=io.StringIO):
-            self.assertEqual(0, access.main(['--check', '--provider', 'qwen']))
+            self.assertEqual(0, access.main(['--check', '--provider', 'qwen', '--output-dir', 'fixture-output']))
 
 
 if __name__ == '__main__':

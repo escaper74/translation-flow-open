@@ -4,6 +4,7 @@ param(
     [string]$PythonPath = "",
     [string]$ToolRoot = "",
     [string]$ProjectRoot = "",
+    [string]$OutputDirectory = "",
     [string]$QueueStateDirectory = "",
     [ValidateSet("large-v3", "large-v3-turbo")][string]$WhisperAModel = "large-v3-turbo"
 )
@@ -94,7 +95,21 @@ $ApiKeyLabel = Get-Control "ApiKeyLabel"
 $PythonPathBox = Get-Control "PythonPathBox"
 $ToolRootBox = Get-Control "ToolRootBox"
 $PythonPathBox.Text = $PythonPath
-$ToolRootBox.Text = $ToolRoot
+$ToolRootBox.Text = $(if ($ToolRoot) { $ToolRoot } else { $env:TRANSLATION_FLOW_TOOL_ROOT })
+$JasnaPathBox = Get-Control "JasnaPathBox"
+$JasnaPathBox.Text = $env:TRANSLATION_FLOW_JASNA
+
+function Get-TaskToolRoot {
+    $path=$ToolRootBox.Text.Trim()
+    if (-not $path) { $path=Join-Path $ProjectRoot 'workflow/tools' }
+    return [IO.Path]::GetFullPath($path)
+}
+
+function Get-TaskJasnaPath {
+    $path=$JasnaPathBox.Text.Trim()
+    if (-not $path) { $path=Join-Path (Get-TaskToolRoot) 'jasna/jasna.exe' }
+    return [IO.Path]::GetFullPath($path)
+}
 $ApiKeyPanel = Get-Control "ApiKeyPanel"
 $CodexStatusPanel = Get-Control "CodexStatusPanel"
 $CodexStatusText = Get-Control "CodexStatusText"
@@ -173,10 +188,18 @@ $script:ProviderHost = "chatgpt.com"
 $script:ProviderModel = "cli-default"
 $script:DeepSeekModel = "deepseek-v4-pro"
 
+$script:DefaultOutputDirectory = Join-Path ([Environment]::GetFolderPath('MyVideos')) 'TranslationFlow'
+$OutputDirectoryBox.Text = if ([string]::IsNullOrWhiteSpace($OutputDirectory)) {
+    $script:DefaultOutputDirectory
+} else {
+    [IO.Path]::GetFullPath($OutputDirectory)
+}
+
 if ($ValidateOnly) {
     [pscustomobject]@{
         status = "valid"
         entrypoint = $PSCommandPath
+        output_directory = $OutputDirectoryBox.Text
         bridge = (Join-Path $PSScriptRoot "TranslationFlowProcessBridge.ps1")
         protocol_schema = 1
         provider_model = $script:ProviderModel
@@ -236,7 +259,6 @@ $script:EtaObservation = $null
 $script:EtaRange = ''
 $script:RunEndedAt = $null
 $script:RunPresentationState = 'idle'
-$OutputDirectoryBox.Text = Join-Path $ProjectRoot 'deliverables'
 
 function Convert-ToBrush([string]$Color) {
     return (New-Object System.Windows.Media.BrushConverter).ConvertFromString($Color)
@@ -366,6 +388,9 @@ function Set-FailureSummary([string]$RawMessage) {
     $RunStateText.Text = $guidance.title
     $StageText.Text = $guidance.summary
     $RecoverySummaryText.Text = $guidance.next_step
+    $detail=Get-Control 'FailureDetailText'
+    $detail.Text=$RawMessage
+    $detail.Visibility=$(if([string]::IsNullOrWhiteSpace($RawMessage)){'Collapsed'}else{'Visible'})
     $RecoverySummaryText.Foreground = Convert-ToBrush "#778599"
 }
 
@@ -496,11 +521,10 @@ function Update-TaskModeControls {
 }
 
 function Get-TaskCenterOutputDirectory {
-    if (-not [string]::IsNullOrWhiteSpace($OutputDirectoryBox.Text) -and
-        [IO.Directory]::Exists($OutputDirectoryBox.Text)) {
+    if (-not [string]::IsNullOrWhiteSpace($OutputDirectoryBox.Text)) {
         return [IO.Path]::GetFullPath($OutputDirectoryBox.Text)
     }
-    return [IO.Path]::GetFullPath((Join-Path $ProjectRoot "deliverables"))
+    return $script:DefaultOutputDirectory
 }
 
 function Complete-ExitedRunForTaskCenter {
@@ -533,12 +557,17 @@ function Refresh-TaskCenter {
     $scope = Get-TaskCenterOutputDirectory
     $TaskCenterScopeText.Text = "任务记录目录：$scope"
     $entries = @(Get-TaskCenterEntries $scope)
-    if ($script:IsRunning -and -not [string]::IsNullOrWhiteSpace($script:CurrentJobId)) {
-        foreach ($entry in $entries) {
-            if ($entry.JobId -eq $script:CurrentJobId) {
-                $entry.StatusLabel = "运行中"
-                $entry.CanResume = $false
+    foreach ($entry in $entries) {
+        $activeQueued = @(
+            if ($script:QueueEnabled -and $null -ne $script:QueueSnapshot) {
+                $script:QueueSnapshot.items | Where-Object {
+                    $_.request_path -eq $entry.RequestPath -and $_.status -in @('starting','running','stopping')
+                }
             }
+        )
+        if ($activeQueued.Count -or ($script:IsRunning -and $entry.JobId -eq $script:CurrentJobId)) {
+            $entry.StatusLabel = "运行中"
+            $entry.CanResume = $false
         }
     }
     $TaskHistoryGrid.ItemsSource = $entries
@@ -589,6 +618,7 @@ function Set-InputEnabled([bool]$Enabled) {
     $TokenCapBox.IsEnabled = $Enabled
     $PythonPathBox.IsEnabled = $Enabled
     $ToolRootBox.IsEnabled = $Enabled
+    $JasnaPathBox.IsEnabled = $Enabled
     $BrowseVideoButton.IsEnabled = $Enabled
     $BrowseOutputButton.IsEnabled = $Enabled
     $TaskModeBox.IsEnabled = $Enabled
@@ -1176,7 +1206,7 @@ function Start-ConfirmedRun {
         $request = [ordered]@{
             schema_version=1; workflow_mode='picture_only'; job_id=$jobId;
             input_video=[IO.Path]::GetFullPath($InputVideoBox.Text); output_dir=$outputDir;
-            output_target=$outputTarget; gates=[ordered]@{picture_and_mux_30m_human_accepted=$true}
+            output_target=$outputTarget; gates=[ordered]@{picture_and_mux_30m_human_accepted=$false}
         }
         $backendModule = 'full_workflow.picture_cli'
         $script:CurrentWorkflowMode = 'picture_only'
@@ -1233,7 +1263,7 @@ function Start-ConfirmedRun {
         if ($runFullWorkflow) {
             $request["workflow_mode"] = "translation_picture_final"
             $request["gates"] = [ordered]@{
-                picture_and_mux_30m_human_accepted = $true
+                picture_and_mux_30m_human_accepted = $false
             }
             $request["delivery"] = [ordered]@{
                 additional_mp4 = (Get-SelectedOutputTarget) -eq "mp4"
@@ -1268,6 +1298,12 @@ function Start-ConfirmedRun {
     $script:PendingSrtRequestPath = ""
     [IO.Directory]::CreateDirectory($recordDir) | Out-Null
     $requestPath = Join-Path $recordDir "request.json"
+    # Keep an existing request's historical field for checkpoint identity only.
+    # New requests never assert viewing acceptance; the backend no longer gates on it.
+    if (($runPicture -or $runFullWorkflow) -and [IO.File]::Exists($requestPath)) {
+        $priorRequest = [IO.File]::ReadAllText($requestPath, [Text.Encoding]::UTF8) | ConvertFrom-Json
+        $request['gates'] = Get-JsonProperty $priorRequest 'gates' @{}
+    }
     $json = $request | ConvertTo-Json -Depth 5
     $credential = $(if ($runMediaRepackage -or $runPicture -or $script:ProviderId -eq "codex") { "" } else { $ApiKeyBox.Password })
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
@@ -1280,7 +1316,7 @@ function Start-ConfirmedRun {
     }
     [IO.File]::WriteAllText($requestPath, $json, $utf8NoBom)
     if ($script:CollectQueueRequests) {
-        [void]$script:CollectedQueueItems.Add(@{ request_path=$requestPath; tool_root=$ToolRootBox.Text.Trim(); api_key=$credential })
+        [void]$script:CollectedQueueItems.Add(@{ request_path=$requestPath; tool_root=(Get-TaskToolRoot); python_path=(Resolve-TranslationPython); jasna_path=(Get-TaskJasnaPath); api_key=$credential })
         $credential = $null
         return
     }
@@ -1320,7 +1356,7 @@ function Start-ConfirmedRun {
         $pythonExecutable = Resolve-TranslationPython
         $script:Bridge = Start-TranslationFlowBackend -PythonPath $pythonExecutable `
             -WorkingDirectory $ProjectRoot -RequestPath $requestPath -ApiKey $credential `
-            -BackendModule $backendModule -ToolRoot $ToolRootBox.Text.Trim()
+            -BackendModule $backendModule -ToolRoot (Get-TaskToolRoot) -JasnaPath (Get-TaskJasnaPath)
         Add-EventLog "后端进程已启动（PID $($script:Bridge.ProcessId)）。"
     }
     catch {
@@ -1366,7 +1402,7 @@ function Begin-ConfiguredRun {
     }
     $profileLabel = [string]$ProfileBox.SelectedItem.Content
     $fullDetail = $(if ((Get-SelectedTaskMode) -eq "translation_picture_final") {
-        " A+C 正式检查点完成后，本次会按已通过人工验收的 30 分钟路线处理整片画面，并与翻译 API 并行；只有 Whisper A/C 已结束才启动 GPU，最后与原音轨和正式中文字幕汇合。"
+        " A+C 正式检查点完成后，本次会使用当前 Jasna 配置处理整片画面；技术完成后仍需观看验收，并与翻译 API 并行；只有 Whisper A/C 已结束才启动 GPU，最后与原音轨和正式中文字幕汇合。"
     } else { "" })
     $mp4Detail = $(if ((Get-SelectedOutputTarget) -eq "mp4" -and (Get-SelectedTaskMode) -ne "srt_translation") {
         " 正式 MKV 技术通过后会再追加 MP4；追加失败不会推翻或删除 MKV。"
@@ -1463,6 +1499,7 @@ $RefreshTaskCenterButton.Add_Click({ Refresh-TaskCenter })
 $ResumeTaskButton.Add_Click({
     $selected = $TaskHistoryGrid.SelectedItem
     if ($null -eq $selected) { return }
+    if (-not (Start-TaskDraft)) { return }
     Set-UiPage 'setup'
     try {
         $resume = Get-TaskCenterResumeRequest ([string]$selected.RequestPath)
@@ -1542,6 +1579,7 @@ $DropZone.Add_Drop({
 })
 
 $StartButton.Add_Click({
+    if ($script:QueueSubmitting -or $null -ne $script:AccessBridge) { return }
     $script:CurrentWhisperAModel = [string]$WhisperModelBox.SelectedItem.Tag
     $script:PendingSrtRequestPath = ""
     try { Begin-ConfiguredRun }
@@ -1552,6 +1590,7 @@ $CancelConsentButton.Add_Click({
     if (-not $script:PendingQueueResumeId) { $script:PendingSrtRequestPath = "" }
 })
 $ConfirmConsentButton.Add_Click({
+    if ($script:QueueSubmitting -or $null -ne $script:AccessBridge -or $ConsentOverlay.Visibility -ne [Windows.Visibility]::Visible) { return }
     $ConsentOverlay.Visibility = [Windows.Visibility]::Collapsed
     try { Start-CheckedBatch }
     catch { $InputErrorText.Text = "无法建立任务：$($_.Exception.Message)" }
@@ -1574,7 +1613,7 @@ $InputVideoBox.Add_TextChanged({
     $StartButton.IsEnabled = (-not $script:IsRunning) -and (-not $script:QueueSubmitting) -and [IO.File]::Exists($InputVideoBox.Text)
 })
 $NewTaskButton.Add_Click({
-    if ($script:IsRunning) { Set-UiPage 'home'; return }
+    if (-not (Start-TaskDraft)) { return }
     Select-ComboBoxItemByTag $WhisperModelBox $WhisperAModel
     $script:CurrentWhisperAModel = $WhisperAModel
     $script:PendingQueueResumeId=''; $script:PendingSrtRequestPath=''; $script:SelectedFiles=@()
@@ -1636,6 +1675,8 @@ $PauseQueueButton.Add_Click({ try { [void](Start-QueueCall @{action='pause'}) } 
 $StopQueueButton.Add_Click({ try { [void](Start-QueueCall @{action='stop'}) } catch { $QueueStatusText.Text=$_.Exception.Message } })
 $ViewQueueItemButton.Add_Click({
     if ($null -eq $QueueGrid.SelectedItem) { return }
+    if ($script:QueueSubmitting -or $null -ne $script:AccessBridge) { return }
+    $script:QueueDraftActive=$false
     $script:CurrentQueueId=$QueueGrid.SelectedItem.id
     $script:QueueRunStamp=''
     Set-UiPage 'run'

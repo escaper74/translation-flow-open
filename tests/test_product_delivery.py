@@ -42,6 +42,33 @@ class ProductDeliveryTests(unittest.TestCase):
                     reply = queue.command({'action': 'enqueue', 'items': [{'request_path': str(path)}]})
                     self.assertEqual('queued', reply['items'][0]['status'])
 
+    def test_picture_resume_accepts_relocated_tools_but_keeps_source_identity(self):
+        from translation_flow.events import EventEmitter
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            source = root / "source.mkv"
+            source.write_bytes(b"source fixture")
+            request = PictureRequest.from_mapping(dict(schema_version=1, workflow_mode="picture_only",
+                job_id="resume-tools", input_video=str(source), output_dir=str(root), output_target="mkv", gates={}))
+            reached_picture = Mock(side_effect=TranslationCancelled("fixture boundary"))
+            def runner(tools):
+                return PictureRunner(request, tools=tools, jasna=tools / "jasna.exe", gate=tools / "retired-gate.json",
+                    picture_runner=reached_picture, emitter=EventEmitter(request.job_id, root / "events.jsonl", stdout=io.StringIO()))
+            old = runner(root / "old-tools")
+            with self.assertRaises(TranslationCancelled):
+                old.run()
+            manifest = (old.root / "workflow.json").read_bytes()
+            corrected = runner(root / "new-tools")
+            with self.assertRaises(TranslationCancelled):
+                corrected.run()
+            self.assertEqual(2, reached_picture.call_count)
+            self.assertEqual(corrected.picture_config.jasna, reached_picture.call_args.args[0].jasna)
+            self.assertEqual(manifest, (old.root / "workflow.json").read_bytes())
+            source.write_bytes(b"changed source")
+            with self.assertRaisesRegex(ValueError, "源片或设置"):
+                corrected.run()
+            self.assertEqual(2, reached_picture.call_count)
+
     def test_picture_readiness_never_checks_login_or_translation(self):
         with patch('translation_flow.desktop_access.inspect_environment', return_value={'checks': []}), \
              patch('translation_flow.desktop_access.codex_status', side_effect=AssertionError('no login')), \
@@ -176,6 +203,7 @@ foreach ($mode in @('translation','picture_only','translation_picture_final')) {
     Start-ConfirmedRun
     $request=[IO.File]::ReadAllText($script:CollectedQueueItems[$script:CollectedQueueItems.Count-1].request_path) | ConvertFrom-Json
     if ($mode -eq 'picture_only' -and $request.PSObject.Properties['provider']) { throw 'picture has provider identity' }
+    if ($mode -ne 'translation' -and $request.gates.picture_and_mux_30m_human_accepted -ne $false) { throw 'new request invented viewing acceptance' }
     $script:CodexStatus='available'
 }
 if ($script:CollectedQueueItems.Count -ne 3) { throw 'missing formal requests' }

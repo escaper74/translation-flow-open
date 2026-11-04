@@ -18,7 +18,7 @@ def build_parser() -> argparse.ArgumentParser:
     parser = argparse.ArgumentParser(description="整片翻译、画面处理与最终薄汇合 workflow")
     parser.add_argument("--request", required=True, type=Path)
     parser.add_argument("--tool-root", type=Path)
-    parser.add_argument("--acceptance-gate-report", type=Path)
+    parser.add_argument("--acceptance-gate-report", type=Path, help=argparse.SUPPRESS)  # legacy manifest identity only
     parser.add_argument("--jasna", type=Path)
     return parser
 
