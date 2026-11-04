@@ -11,7 +11,7 @@ WORKFLOW_MODE = "translation_picture_final"
 
 @dataclass(frozen=True)
 class FullWorkflowGates:
-    picture_and_mux_30m_human_accepted: bool
+    picture_and_mux_30m_human_accepted: bool = False
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "FullWorkflowGates":
@@ -20,8 +20,6 @@ class FullWorkflowGates:
                 value.get("picture_and_mux_30m_human_accepted") is True
             )
         )
-        if not gate.picture_and_mux_30m_human_accepted:
-            raise ValueError("整片处理必须显式确认 30 分钟画面与最终汇合样片已通过人工验收")
         return gate
 
 

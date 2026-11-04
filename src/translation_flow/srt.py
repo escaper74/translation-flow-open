@@ -64,7 +64,7 @@ def _format_ms(value: int) -> str:
     return f"{hours:02d}:{minutes:02d}:{seconds:02d},{milliseconds:03d}"
 
 
-def parse_srt(path: str | Path) -> list[SubtitleCue]:
+def parse_srt(path: str | Path, *, allow_empty: bool = False) -> list[SubtitleCue]:
     """Parse an SRT without silently skipping malformed blocks."""
 
     source = Path(path)
@@ -72,6 +72,8 @@ def parse_srt(path: str | Path) -> list[SubtitleCue]:
     normalized = raw.replace("\r\n", "\n").replace("\r", "\n")
     blocks = re.split(r"\n{2,}", normalized.strip("\n")) if normalized else []
     if not blocks or all(not block.strip() for block in blocks):
+        if allow_empty:
+            return []
         raise ValueError(f"SRT contains no cues: {source}")
 
     cues: list[SubtitleCue] = []

@@ -4,5 +4,6 @@
     PythonPath = ''            # e.g. C:\TranslationFlow\.venv\Scripts\python.exe
     ToolRoot = ''              # default: <project>\workflow\tools
     JasnaPath = ''             # default: <ToolRoot>\jasna\jasna.exe
-    AcceptanceGateReport = ''  # your own accepted 30-minute workflow-report.json
+    # Older AcceptanceGateReport values are only retained for old checkpoint identity.
+    # Ordinary picture/full tasks do not require a historical acceptance report.
 }

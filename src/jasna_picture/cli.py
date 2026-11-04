@@ -24,6 +24,7 @@ DEFAULT_FFPROBE = DEFAULT_FFMPEG.with_name("ffprobe.exe")
 
 def _add_common_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--source", type=Path, required=True)
+    parser.add_argument("--short-start", default="00:00:00", help="60 秒短样起点；默认从开头。")
     parser.add_argument("--work-dir", type=Path, required=True)
     parser.add_argument("--jasna", type=Path, default=DEFAULT_JASNA)
     parser.add_argument("--ffmpeg", type=Path, default=DEFAULT_FFMPEG)
@@ -35,7 +36,7 @@ def _add_workflow_arguments(parser: argparse.ArgumentParser) -> None:
     parser.add_argument("--source", required=True, type=Path)
     parser.add_argument("--work-dir", required=True, type=Path)
     parser.add_argument("--output", required=True, type=Path)
-    parser.add_argument("--gate-report", required=True, type=Path)
+    parser.add_argument("--gate-report", type=Path, help="仅 acceptance：已通过的短样技术报告。")
     parser.add_argument(
         "--start",
         help="30 分钟 acceptance 的起点；full 不允许传入。",
@@ -87,7 +88,7 @@ def build_parser() -> argparse.ArgumentParser:
 
     workflow_preflight_parser = subparsers.add_parser(
         "workflow-preflight",
-        help="零 GPU 核对工具版本、七个 TensorRT 引擎、源片和前级报告。",
+        help="零 GPU 核对工具版本、七个 TensorRT 引擎和源片；仅 acceptance 检查短样报告。",
     )
     _add_workflow_arguments(workflow_preflight_parser)
 
@@ -116,6 +117,7 @@ def _build_plan(args: argparse.Namespace):
         jasna=args.jasna,
         ffmpeg=args.ffmpeg,
         ffprobe=args.ffprobe,
+        short_start=args.short_start,
     )
     return build_experiment_plan(paths)
 

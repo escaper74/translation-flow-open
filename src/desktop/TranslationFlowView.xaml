@@ -289,6 +289,7 @@
                 <TextBlock x:Name="ProgressText" Text="0%" Foreground="#00A5A2" FontSize="38"/>
               </StackPanel>
             </Grid>
+            <TextBlock x:Name="FailureDetailText" Visibility="Collapsed" Foreground="#B04426" FontSize="15" TextWrapping="Wrap" Margin="0,0,0,18"/>
             <ProgressBar x:Name="ProgressBar" Height="8" Minimum="0" Maximum="100" Foreground="#00A5A2" Background="#DDF2F1" BorderThickness="0">
               <ProgressBar.Template>
                 <ControlTemplate TargetType="ProgressBar">
@@ -481,6 +482,8 @@
                         <TextBox x:Name="PythonPathBox" Style="{StaticResource InputStyle}" Margin="0,5,0,10"/>
                         <TextBlock Text="工具目录" Style="{StaticResource Muted}"/>
                         <TextBox x:Name="ToolRootBox" Style="{StaticResource InputStyle}" Margin="0,5,0,8"/>
+                        <TextBlock Text="Jasna 程序（留空使用工具目录下的 jasna/jasna.exe）" Style="{StaticResource Muted}"/>
+                        <TextBox x:Name="JasnaPathBox" Style="{StaticResource InputStyle}" Margin="0,5,0,8"/>
                         <TextBlock Text="SRT 翻译不需要视频工具。" Style="{StaticResource Muted}"/>
                       </StackPanel>
                     </Expander>
@@ -490,6 +493,8 @@
                 <Border BorderBrush="#E3E9EF" BorderThickness="0,1,0,0" Padding="0,20,0,0" Margin="0,24,0,0">
                   <StackPanel>
                     <TextBlock Text="视频工具" FontSize="18" FontWeight="SemiBold" Margin="0,0,0,12"/>
+                    <Button x:Name="PictureSampleButton" Content="首次画面验证：选择短视频   →" HorizontalAlignment="Left"/>
+                    <TextBlock Text="先用自备的 30–60 秒短视频测试去马；检查成片后再处理长片。无需历史验收报告。长片截取短样及 30 分钟回归命令见 WORKFLOW。" TextWrapping="Wrap" Style="{StaticResource Muted}" Margin="0,8,0,16"/>
                     <Button x:Name="RepackageToolButton" Content="已有字幕的视频换格式   →" HorizontalAlignment="Left"/>
                     <TextBlock Text="保留画面、声音和字幕，另存一份视频。" Style="{StaticResource Muted}" Margin="0,10,0,0"/>
                   </StackPanel>

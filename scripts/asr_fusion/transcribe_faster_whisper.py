@@ -308,12 +308,14 @@ def main() -> int:
     model = WhisperModel(
         str(args.model), device=args.device, compute_type=args.compute_type
     )
+    # C is a candidate track: do not feed an earlier decoding mistake into
+    # every following window of a long film.
+    decoding = {"temperature": 0.0, "condition_on_previous_text": False}
     segment_iterator, info = model.transcribe(
         str(args.input),
         language="ja",
         task="transcribe",
         beam_size=args.beam_size,
-        temperature=0.0,
         vad_filter=True,
         vad_parameters={
             "threshold": args.vad_threshold,
@@ -323,7 +325,7 @@ def main() -> int:
         },
         word_timestamps=True,
         initial_prompt="Japanese spoken dialogue. Keep proper nouns and short utterances accurate.",
-        condition_on_previous_text=True,
+        **decoding,
     )
     segments = list(segment_iterator)
     elapsed = time.perf_counter() - started
@@ -413,6 +415,7 @@ def main() -> int:
         "model": str(args.model),
         "device": args.device,
         "compute_type": args.compute_type,
+        "decoding": decoding,
         "elapsed_seconds": round(elapsed, 3),
         "language": info.language,
         "language_probability": float(info.language_probability),

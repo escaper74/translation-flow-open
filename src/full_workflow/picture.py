@@ -96,9 +96,13 @@ class PictureRunner:
         manifest = dict(source_identity=identity, output=str(self.output),
                         jasna=str(self.picture_config.jasna), gate=str(self.picture_config.gate_report))
         manifest_path = self.root / 'workflow.json'
-        if manifest_path.exists() and _load_json(manifest_path, '去马任务') != manifest:
-            raise ValueError('去马任务的源片或设置已改变，请建立新任务。')
-        _write_json(manifest_path, manifest)
+        if manifest_path.exists():
+            recorded = _load_json(manifest_path, '去马任务')
+            # Executable location and the retired global gate are not media identity.
+            if {**recorded, 'jasna': manifest['jasna'], 'gate': manifest['gate']} != manifest:
+                raise ValueError('去马任务的源片或设置已改变，请建立新任务。')
+        else:
+            _write_json(manifest_path, manifest)
         self.events.emit('job_started', workflow_mode='picture_only', input_video=str(self.request.input_video))
         check_cancelled(self.stopped)
         self.events.emit('stage_started', stage='picture_workflow', overall_percent=1, detail='正在去马。')

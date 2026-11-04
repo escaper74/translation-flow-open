@@ -69,6 +69,52 @@ class TaskQueueTests(unittest.TestCase):
         return self.queue.command({"action": "enqueue", "authorized": True,
                                    "items": [{"request_path": str(p), "api_key": key} for p in paths]})
 
+    def test_failed_task_resumes_with_corrected_runtime_and_same_checkpoints(self):
+        path = make_request(self.root)
+        request_bytes = path.read_bytes()
+        checkpoint = path.parent / "checkpoint.fixture"
+        checkpoint.write_bytes(b"completed fixture work")
+        row_id = self.queue.command({"action": "enqueue", "authorized": True, "items": [{
+            "request_path": str(path), "python_path": "missing-python.exe",
+            "tool_root": "old-tools", "jasna_path": "old-jasna.exe"}]})["items"][0]["id"]
+        with patch.object(self.queue, "launcher", side_effect=FileNotFoundError("runtime moved")):
+            self.queue.tick()
+        self.assertEqual("failed", self.queue.snapshot()["items"][0]["status"])
+        runtime = {"python_path": sys.executable, "tool_root": str(self.root / "new-tools"),
+                   "jasna_path": str(self.root / "new-jasna.exe")}
+        self.queue.command({"action": "resume", "ids": [row_id], "authorized": True, "runtime": runtime})
+        persisted = json.loads(self.queue.path.read_text(encoding="utf-8"))["items"][0]
+        for name, value in runtime.items():
+            self.assertEqual(value, persisted[name])
+        with patch("translation_flow.task_queue.subprocess.Popen", return_value=Process()) as launch:
+            self.queue.launcher = self.queue._launch
+            self.queue.tick()
+        args, kwargs = launch.call_args
+        self.assertEqual(sys.executable, args[0][0])
+        self.assertEqual(runtime["tool_root"], args[0][-1])
+        self.assertEqual(runtime["jasna_path"], kwargs["env"]["TRANSLATION_FLOW_JASNA"])
+        complete(path)
+        launch.return_value.code = 0
+        self.queue.tick()
+        self.assertEqual("completed", self.queue.snapshot()["items"][0]["status"])
+        self.assertEqual(1, len(self.queue.snapshot()["items"]))
+        self.assertEqual(request_bytes, path.read_bytes())
+        self.assertEqual(b"completed fixture work", checkpoint.read_bytes())
+
+    def test_bad_resume_runtime_cannot_partially_change_queue_or_credentials(self):
+        paths = [make_request(self.root, name, provider="deepseek") for name in ("a", "b")]
+        rows = self.enqueue(*paths, key="original-session")["items"]
+        self.queue.command({"action": "pause"})
+        before = self.queue.snapshot()
+        saved = self.queue.path.read_bytes()
+        for runtime in ({"python_path": 3}, {"output_dir": "elsewhere"}, None):
+            with self.subTest(runtime=runtime), self.assertRaisesRegex(ValueError, "运行工具配置"):
+                self.queue.command({"action": "resume", "ids": [r["id"] for r in rows], "authorized": True,
+                                    "runtime": runtime, "credentials": {rows[0]["id"]: "replacement"}})
+            self.assertEqual(before, self.queue.snapshot())
+            self.assertEqual(saved, self.queue.path.read_bytes())
+            self.assertEqual("original-session", self.queue.credentials[rows[0]["id"]])
+
     def test_repeated_clicks_and_duplicate_batch_entries_launch_once(self):
         path = make_request(self.root)
         self.enqueue(path, path)

@@ -295,6 +295,69 @@ class CodexAdapterTests(unittest.TestCase):
             self.assertNotIn("private stderr", next(root.glob("*.json")).read_text())
             self.assertIsNone(result["_codex"]["resolved_model"])
 
+    def test_plan_and_nonfatal_error_items_keep_completed_valid_text(self):
+        for types in (("todo_list",), ("error",), ("todo_list", "error", "agent_message")):
+            with self.subTest(types=types), tempfile.TemporaryDirectory() as raw:
+                class Process:
+                    returncode = 0
+                    def __init__(self, args, **kwargs):
+                        self.output = Path(args[args.index("--output-last-message") + 1])
+                    def communicate(self, **kwargs):
+                        self.output.write_text(json.dumps({"items": [{"id": 1, "text": "neutral", "note": ""}]}), encoding="utf-8")
+                        events = [{"type": "item.completed", "item": {"type": kind, "message": "private event text"}} for kind in types]
+                        return "\n".join(map(json.dumps, events + [{"type": "turn.completed"}])), "private stderr"
+                root = Path(raw)
+                provider = CodexProvider(audit_dir=root, executable="fixture.exe",
+                    status_probe=lambda **_: AVAILABLE, process_factory=Process)
+                result = json.loads(provider.chat([], model="cli-default", temperature=0, json_output=True))
+                self.assertEqual("neutral", result["items"][0]["text"])
+                self.assertEqual(sorted(types), result["_codex"]["item_types"])
+                self.assertEqual(0, result["_codex"]["tool_items"])
+                audit = next(root.glob("*.json")).read_text(encoding="utf-8")
+                self.assertNotIn("private", audit)
+
+    def test_real_tools_and_unknown_items_still_reject_without_leaking_payload(self):
+        from translation_flow.translation.provider import FatalProviderError
+        for kind in ("command_execution", "file_change", "mcp_tool_call", "web_search", "future_item", "private/type\npayload"):
+            with self.subTest(kind=kind), tempfile.TemporaryDirectory() as raw:
+                class Process:
+                    returncode = 0
+                    def __init__(self, args, **kwargs):
+                        self.output = Path(args[args.index("--output-last-message") + 1])
+                    def communicate(self, **kwargs):
+                        self.output.write_text("valid text must not excuse a tool call", encoding="utf-8")
+                        events = [{"type": "item.completed", "item": {"type": kind, "command": "private command",
+                                   "arguments": {"text": "private source"}}}, {"type": "turn.completed"}]
+                        return "\n".join(map(json.dumps, events)), "private stderr"
+                provider = CodexProvider(audit_dir=raw, executable="fixture.exe",
+                    status_probe=lambda **_: AVAILABLE, process_factory=Process)
+                with self.assertRaises(FatalProviderError) as caught:
+                    provider.chat([], model="cli-default", temperature=0)
+                message = str(caught.exception)
+                self.assertIn("unknown" if kind.startswith("private/") else kind, message)
+                self.assertNotIn("private", message)
+                self.assertFalse(list(Path(raw).glob("*.json")))
+
+    def test_informational_items_cannot_hide_failed_or_incomplete_turn(self):
+        from translation_flow.translation.provider import RetryableProviderError
+        for failure in ("exit_failure", "turn_failed", "no_completion", "no_output", "invalid_json"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as raw:
+                class Process:
+                    returncode = 1 if failure == "exit_failure" else 0
+                    def __init__(self, args, **kwargs):
+                        self.output = Path(args[args.index("--output-last-message") + 1])
+                    def communicate(self, **kwargs):
+                        if failure != "no_output":
+                            self.output.write_text("invalid" if failure == "invalid_json" else '{"items":[{"id":1,"text":"neutral","note":""}]}', encoding="utf-8")
+                        events = [{"type": "item.completed", "item": {"type": "error", "message": "connection reset"}}]
+                        if failure != "no_completion":
+                            events.append({"type": "turn.failed" if failure == "turn_failed" else "turn.completed"})
+                        return "\n".join(map(json.dumps, events)), ""
+                provider = CodexProvider(audit_dir=raw, executable="fixture.exe",
+                    status_probe=lambda **_: AVAILABLE, process_factory=Process)
+                with self.assertRaises(RetryableProviderError):
+                    provider.chat([], model="cli-default", temperature=0, json_output=True)
+
     def test_cancellation_terminates_only_owned_process(self):
         state = {"cancel": False}
         process = Mock(returncode=None)

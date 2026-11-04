@@ -240,6 +240,11 @@ class TaskQueue:
                     existing = next((r for r in self.state["items"] if r["id"] == info["id"]), None)
                     if existing and existing["request_digest"] != info["request_digest"]:
                         raise ValueError("原请求已改变；请另建正式任务，不要覆盖恢复设置")
+                    for name in ("python_path", "jasna_path"):
+                        if name in item:
+                            if not isinstance(item[name], str):
+                                raise ValueError("运行工具路径必须是文本")
+                            info[name] = item[name]
                     prepared.append((info, key, tool_root, existing))
                 self.state["submission"] = {
                     "added": [info["id"] for info, _, _, existing in prepared if not existing],
@@ -274,6 +279,11 @@ class TaskQueue:
                 keys = payload.get("credentials", {})
                 if not isinstance(keys, dict) or any(not isinstance(v, str) for v in keys.values()):
                     raise ValueError("本次密钥配置无效")
+                runtime = payload.get("runtime", {})
+                if (not isinstance(runtime, dict)
+                        or set(runtime) - {"python_path", "tool_root", "jasna_path"}
+                        or any(not isinstance(value, str) for value in runtime.values())):
+                    raise ValueError("运行工具配置无效；只接受 Python、工具目录和 Jasna 路径")
                 if self.state["paused"]:
                     # Older workers could leave globally paused rows as queued.
                     # Resuming selected tasks must not release any other rows.
@@ -283,6 +293,9 @@ class TaskQueue:
                 for row in selected:
                     if row["provider"] not in {"", "codex"}:
                         self.credentials[row["id"]] = keys.get(row["id"]) or self.credentials.get(row["id"], "")
+                    # Runtime locations are not media/cache identity. Apply the
+                    # corrected settings only after the whole resume is valid.
+                    row.update(runtime)
                     row.update(status="queued", message="等待从检查点继续")
                 self.state["paused"] = False
             elif action in {"stop", "pause"}:
@@ -312,7 +325,11 @@ class TaskQueue:
         if key:
             env["SUBTITLE_API_KEY"] = key
         env["PYTHONIOENCODING"] = "utf-8"
-        args = [sys.executable, "-m", "translation_flow.queue_cli", "--run-request", row["request_path"],
+        if "jasna_path" in row:
+            env.pop("TRANSLATION_FLOW_JASNA", None)
+            if row["jasna_path"]:
+                env["TRANSLATION_FLOW_JASNA"] = row["jasna_path"]
+        args = [row.get("python_path") or sys.executable, "-m", "translation_flow.queue_cli", "--run-request", row["request_path"],
                 "--request-digest", row["request_digest"]]
         if row["tool_root"]:
             args += ["--tool-root", row["tool_root"]]

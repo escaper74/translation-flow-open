@@ -17,7 +17,7 @@ def main(argv=None):
     parser.add_argument('--request', type=Path, required=True)
     parser.add_argument('--tool-root', type=Path)
     parser.add_argument('--jasna', type=Path)
-    parser.add_argument('--acceptance-gate-report', type=Path)
+    parser.add_argument('--acceptance-gate-report', type=Path, help=argparse.SUPPRESS)  # legacy manifest identity only
     args = parser.parse_args(argv)
     os.environ.pop('SUBTITLE_API_KEY', None)
     emitter = None

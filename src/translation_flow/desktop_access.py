@@ -5,6 +5,7 @@ from __future__ import annotations
 import argparse
 import json
 import os
+from pathlib import Path
 import subprocess
 import sys
 import tempfile
@@ -12,6 +13,7 @@ import tempfile
 from .codex_runtime import resolve_codex_executable
 from .diagnostics import inspect_environment
 from .translation.api_providers import create_api_provider
+from .translation.pipeline import validate_cache_path
 from .translation.codex_provider import CodexProvider, cli_environment, codex_status, NO_WINDOW
 
 
@@ -33,8 +35,21 @@ def login_codex():
 
 
 def check_readiness(*, mode, provider, tools=None, model=None, endpoint=None,
-                    max_output_tokens=None, api_key="", probe=False):
-    report = inspect_environment(mode=mode, provider=provider, tools=tools)
+                    max_output_tokens=None, api_key="", probe=False, jasna=None, asr_a_model="large-v3-turbo",
+                    output_dir=None):
+    if output_dir is not None:
+        try:
+            output = Path(output_dir).resolve()
+            if mode in ("video", "full", "srt"):
+                folder, job_prefix, cache = (".srt-translation", "srt-", "cache") if mode == "srt" else (".translation-flow", "job-", "translations")
+                validate_cache_path(output / folder / (job_prefix + "0" * 32) / cache)
+            output.mkdir(parents=True, exist_ok=True)
+            with tempfile.TemporaryFile(dir=output):
+                pass
+        except (OSError, ValueError) as exc:
+            return {"checks": [], "service_tested": False, "status": "blocked",
+                    "message": "保存位置不可用，尚未开始处理文件：" + str(exc)}
+    report = inspect_environment(mode=mode, provider=provider, tools=tools, jasna=jasna, asr_a_model=asr_a_model)
     report["service_tested"] = False
     missing = [item["name"] for item in report["checks"] if not item["present"]]
     if missing:
@@ -91,6 +106,9 @@ def main(argv=None):
     parser.add_argument("--mode", choices=("video", "srt", "full", "picture", "repackage"), default="srt")
     parser.add_argument("--provider", default="codex")
     parser.add_argument("--tool-root")
+    parser.add_argument("--output-dir")
+    parser.add_argument("--jasna")
+    parser.add_argument("--asr-a-model", default="large-v3-turbo", choices=("large-v3", "large-v3-turbo"))
     parser.add_argument("--model")
     parser.add_argument("--endpoint")
     parser.add_argument("--max-output-tokens", type=int)
@@ -99,6 +117,7 @@ def main(argv=None):
     api_key = os.environ.pop("SUBTITLE_API_KEY", "")
     result = login_codex() if args.login else check_readiness(
         mode=args.mode, provider=args.provider, tools=args.tool_root, model=args.model,
+        jasna=args.jasna, asr_a_model=args.asr_a_model, output_dir=args.output_dir,
         endpoint=args.endpoint, max_output_tokens=args.max_output_tokens, api_key=api_key, probe=args.probe)
     print(json.dumps(result, ensure_ascii=False))
     return 0

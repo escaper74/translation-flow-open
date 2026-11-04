@@ -3,6 +3,7 @@ from __future__ import annotations
 import hashlib
 import json
 import os
+import shutil
 import subprocess
 import sys
 import tempfile
@@ -61,13 +62,15 @@ def load_completed_asr(source: Path, job_root: Path, emit: Emit | None = None, *
     """The existing completed-ASR checks, without requiring or launching tools."""
     source, job_root = source.resolve(), job_root.resolve()
     a_cues = parse_srt(job_root / "A" / "A.ja.srt")
-    c_cues = parse_srt(job_root / "C" / "C.ja.srt")
+    c_cues = parse_srt(job_root / "C" / "C.ja.srt", allow_empty=True)
     fusion_srt = job_root / "fusion" / "fusion.ja.srt"
     fused_cues = parse_srt(fusion_srt)
-    if not a_cues or not c_cues or not fused_cues:
+    if not a_cues or not fused_cues:
         raise ValueError("resumed ASR produced no subtitle cues")
     validate_timeline(a_cues, fused_cues)
     report = json.loads((job_root / "asr.report.json").read_text(encoding="utf-8-sig"))
+    if not c_cues and not report.get("c_repetition_filter", {}).get("removed_cues"):
+        raise ValueError("resumed ASR has an unexplained empty C checkpoint")
     stat = source.stat()
     if (not isinstance(report, dict) or report.get("status") != "complete"
             or Path(str(report.get("source", ""))).resolve() != source
@@ -277,6 +280,56 @@ def _significant(left: SubtitleCue, right: SubtitleCue) -> bool:
     overlap = _overlap(left, right)
     shorter = min(left.end_ms - left.start_ms, right.end_ms - right.start_ms)
     return shorter > 0 and overlap / shorter >= 0.35
+
+
+def filter_repeated_c(
+    backbone: Sequence[SubtitleCue], candidates: Sequence[SubtitleCue],
+    model_segments: Sequence[SubtitleCue] | None = None,
+) -> tuple[list[SubtitleCue], dict[str, Any]]:
+    """Discard unsupported repeated C candidates; never delete A timeline entries."""
+    evidence = list(model_segments) if model_segments is not None else list(candidates)
+    counts = Counter(_normalized(cue.text) for cue in evidence)
+    a_texts = [(cue, _normalized(cue.text)) for cue in backbone]
+    rejected = []
+    bad_segments = []
+    for phrase, count in counts.items():
+        if len(phrase) < 5 or count < 50 or count / max(len(evidence), 1) < 0.18:
+            continue
+        matching = [cue for cue in evidence if _normalized(cue.text) == phrase]
+        supported = sum(any(phrase in text and _overlap(a, c) > 0
+                            for a, text in a_texts) for c in matching)
+        if supported / count > 0.20:
+            continue
+        rejected.append({"text": phrase, "count": count, "a_support_count": supported})
+        bad_segments.extend(matching)
+    phrases = {item["text"] for item in rejected}
+    kept = [cue for cue in candidates if not (
+        any(phrase in _normalized(cue.text) for phrase in phrases)
+        or any(_overlap(cue, bad) > 0 for bad in bad_segments))]
+    kept = [SubtitleCue(i, cue.start_ms, cue.end_ms, cue.text)
+            for i, cue in enumerate(kept, 1)]
+    return kept, {
+        "input_cues": len(candidates), "kept_cues": len(kept),
+        "removed_cues": len(candidates) - len(kept),
+        "removed_model_segments": len(bad_segments), "rejected_phrases": rejected,
+        "policy": {"minimum_chars": 5, "minimum_count": 50,
+                   "minimum_ratio": 0.18, "maximum_a_support_ratio": 0.20},
+        "a_timeline_preserved": True, "audio_verified": False,
+    }
+
+
+def _has_complete_c_transcription(directory: Path) -> bool:
+    """The final transcription report and matching outputs prove C decoding ended."""
+    try:
+        report = json.loads((directory / "C.transcription.json").read_text(encoding="utf-8-sig"))
+        raw = json.loads((directory / "C.words.json").read_text(encoding="utf-8-sig"))
+        return (report.get("engine") == "faster-whisper"
+                and report.get("model_segments", 0) > 0
+                and len(raw["segments"]) == report["model_segments"]
+                and len(parse_srt(directory / "C.model-segments.srt")) == report["model_segments"]
+                and len(parse_srt(directory / "C.raw.srt")) == report["resegmented_cues"])
+    except (OSError, ValueError, KeyError, TypeError):
+        return False
 
 
 def conservative_fuse(
@@ -689,12 +742,34 @@ class AsrPipeline:
         )
         _emit(emit, "resource_status", resource="gpu", state="released", after_stage="asr_a")
 
+        # Preserve prior evidence; completed decoding can be re-filtered without GPU.
+        reuse_c = _has_complete_c_transcription(c_dir)
+        preserved_c = None
+        if any(c_dir.iterdir()):
+            if c_dir.resolve() != c_dir:
+                raise ValueError("C checkpoint directory resolves outside its expected path")
+            attempt = 1
+            preserved_c = c_dir.with_name(f"C.interrupted-{attempt:02d}")
+            while preserved_c.exists():
+                attempt += 1
+                preserved_c = c_dir.with_name(f"C.interrupted-{attempt:02d}")
+            c_dir.rename(preserved_c)
+            c_dir.mkdir()
+            if reuse_c:
+                for name in ("C.words.json", "C.model-segments.srt", "C.raw.srt",
+                             "C.transcription.json", "C.txt"):
+                    if (preserved_c / name).is_file():
+                        shutil.copy2(preserved_c / name, c_dir / name)
+            _emit(emit, "warning", stage="asr_c", code="ASR_C_ATTEMPT_PRESERVED",
+                  message="上次 C 识别现场已另行保留，本次重新检查候选文本。",
+                  preserved_path=str(preserved_c))
+
         # A and its whisper child have exited before C starts.
         _emit(
             emit,
             "stage_started",
             stage="asr_c",
-            resumed=False,
+            resumed=reuse_c,
             overall_percent=26,
         )
         c_env = os.environ.copy()
@@ -702,50 +777,51 @@ class AsrPipeline:
         if runtime_dirs:
             c_env["PATH"] = os.pathsep.join(map(str, runtime_dirs)) + os.pathsep + c_env.get("PATH", "")
         c_env.update({"HF_HUB_OFFLINE": "1", "HF_HUB_DISABLE_TELEMETRY": "1"})
-        self._run_process(
-            [
-                str(self.tools.faster_python),
-                str(self.tools.transcribe_c),
-                "--input",
-                str(source),
-                "--model",
-                str(self.tools.faster_model),
-                "--raw-json",
-                str(c_dir / "C.words.json"),
-                "--model-srt",
-                str(c_dir / "C.model-segments.srt"),
-                "--output-srt",
-                str(c_raw),
-                "--output-txt",
-                str(c_dir / "C.txt"),
-                "--report",
-                str(c_dir / "C.transcription.json"),
-                "--device",
-                "cuda",
-                "--compute-type",
-                "float16",
-                "--beam-size",
-                "5",
-                "--vad-threshold",
-                "0.35",
-                "--min-speech-ms",
-                "100",
-                "--min-silence-ms",
-                "500",
-                "--speech-pad-ms",
-                "250",
-                "--max-chars",
-                "28",
-                "--max-line-chars",
-                "16",
-                "--max-duration",
-                "6.0",
-                "--max-gap",
-                "0.65",
-            ],
-            "Whisper C transcription",
-            env=c_env,
-        )
+        if not reuse_c:
+            self._run_process(
+                [
+                    str(self.tools.faster_python),
+                    str(self.tools.transcribe_c),
+                    "--input",
+                    str(source),
+                    "--model",
+                    str(self.tools.faster_model),
+                    "--raw-json",
+                    str(c_dir / "C.words.json"),
+                    "--model-srt",
+                    str(c_dir / "C.model-segments.srt"),
+                    "--output-srt",
+                    str(c_raw),
+                    "--output-txt",
+                    str(c_dir / "C.txt"),
+                    "--report",
+                    str(c_dir / "C.transcription.json"),
+                    "--device",
+                    "cuda",
+                    "--compute-type",
+                    "float16",
+                    "--beam-size",
+                    "5",
+                    "--vad-threshold",
+                    "0.35",
+                    "--min-speech-ms",
+                    "100",
+                    "--min-silence-ms",
+                    "500",
+                    "--speech-pad-ms",
+                    "250",
+                    "--max-chars",
+                    "28",
+                    "--max-line-chars",
+                    "16",
+                    "--max-duration",
+                    "6.0",
+                    "--max-gap",
+                    "0.65",
+                ],
+                "Whisper C transcription",
+                env=c_env,
+            )
         self._run_process(
             [
                 str(self.tools.python),
@@ -753,14 +829,27 @@ class AsrPipeline:
                 "--input",
                 str(c_raw),
                 "--output",
-                str(c_srt),
+                str(c_dir / "C.recognized.ja.srt"),
                 "--report",
                 str(c_dir / "C.clean.json"),
             ],
             "Whisper C cleanup",
         )
-        c_cues = self._assert_cues(c_srt, "Whisper C")
-        c_structure_warnings = self._gate(c_srt, c_dir / "C", duration, c=True)
+        recognized_c = self._assert_cues(c_dir / "C.recognized.ja.srt", "Whisper C")
+        model_path = c_dir / "C.model-segments.srt"
+        model_cues = parse_srt(model_path) if model_path.is_file() else None
+        c_cues, c_filter = filter_repeated_c(a_cues, recognized_c, model_cues)
+        _json_write(c_dir / "C.repetition-filter.json", c_filter)
+        if c_cues:
+            write_srt(c_srt, c_cues)
+        else:
+            c_srt.write_text("", encoding="utf-8")
+        if c_filter["removed_cues"]:
+            _emit(emit, "warning", stage="asr_c", code="ASR_C_REPETITION_REMOVED",
+                  message=f"已自动剔除 {c_filter['removed_cues']} 条重复异常 C 候选；对应 A 路对白和时间轴保留。",
+                  removed_cues=c_filter["removed_cues"],
+                  report_path=str(c_dir / "C.repetition-filter.json"))
+        c_structure_warnings = self._gate(c_srt, c_dir / "C", duration, c=True) if c_cues else []
         for warning in c_structure_warnings:
             _emit(
                 emit,
@@ -774,6 +863,7 @@ class AsrPipeline:
             "stage_completed",
             stage="asr_c",
             cues=len(c_cues),
+            resumed=reuse_c,
             overall_percent=42,
         )
         _emit(emit, "resource_status", resource="gpu", state="released", after_stage="asr_c")
@@ -814,6 +904,8 @@ class AsrPipeline:
             "a_model": self.tools.a_model_id,
             "a_cues": len(a_cues),
             "c_cues": len(c_cues),
+            "preserved_c_attempt": str(preserved_c) if preserved_c else None,
+            "c_repetition_filter": c_filter,
             "fusion_cues": len(reparsed),
             "c_replacements": len(accepted),
             "a_backbone_cues": len(a_cues) - len(accepted),

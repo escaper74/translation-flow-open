@@ -4,6 +4,7 @@ import json
 import os
 from pathlib import Path
 import subprocess
+import sys
 import tempfile
 import unittest
 from unittest.mock import Mock, patch
@@ -29,7 +30,7 @@ class AsrModelSelectionTests(unittest.TestCase):
             command = r'''
 $ErrorActionPreference = 'Stop'
 $ast = [Management.Automation.Language.Parser]::ParseFile((Join-Path $repo 'src/desktop/Start-TranslationFlow.ps1'), [ref]$null, [ref]$null)
-$names = @('Get-StableJobId','Start-ConfirmedRun','Get-SelectedTaskMode','Get-SelectedOutputTarget','Get-SelectedProviderSettings')
+$names = @('Get-StableJobId','Start-ConfirmedRun','Get-SelectedTaskMode','Get-SelectedOutputTarget','Get-SelectedProviderSettings','Get-TaskToolRoot','Get-TaskJasnaPath','Resolve-TranslationPython')
 foreach ($node in $ast.FindAll({param($n) $n -is [Management.Automation.Language.FunctionDefinitionAst]}, $true)) {
     if ($node.Name -in $names) { Invoke-Expression $node.Extent.Text }
 }
@@ -45,6 +46,8 @@ $ProviderBox = @{SelectedItem=@{Tag='codex'}}
 $EndpointBox = @{SelectedItem=$null}
 $ModelBox = @{Text='cli-default'}
 $ToolRootBox = @{Text='unused'}
+$JasnaPathBox = @{Text='unused-jasna.exe'}
+$PythonPathBox = @{Text=$python}
 $script:ProviderId='codex'; $script:ProviderHost='chatgpt.com'; $script:ProviderModel='cli-default'
 $script:CollectQueueRequests=$true
 $script:QueueEnabled=$false
@@ -90,7 +93,7 @@ $srt=Get-Content -LiteralPath $script:CollectedQueueItems[5].request_path -Raw |
 if ($srt.PSObject.Properties.Name -contains 'asr_a_model') { throw 'SRT inherited ASR model' }
 Write-Output 'passed'
 '''
-            prefix = f"$repo='{str(project).replace(chr(39),chr(39)*2)}';$source='{source}';$target='{root / 'out'}';"
+            prefix = f"$python='{sys.executable}';$repo='{str(project).replace(chr(39),chr(39)*2)}';$source='{source}';$target='{root / 'out'}';"
             completed = subprocess.run(["powershell.exe", "-NoProfile", "-ExecutionPolicy", "Bypass", "-Command", prefix + command],
                                        capture_output=True, text=True, timeout=30)
             self.assertEqual(0, completed.returncode, completed.stderr)

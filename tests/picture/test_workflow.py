@@ -17,10 +17,10 @@ from jasna_picture.workflow import (
     DEFAULT_SEGMENT_SECONDS,
     PictureWorkflowConfig,
     YOLO_ENGINE_NAME,
-    _persist_global_route_gate_evidence,
     _concat_and_verify,
     _load_or_create_manifest,
-    _gate_lineage,
+    _require_gate,
+    _require_decoder,
     _prepare_segments,
     _process_segment,
     _source_video_origin,
@@ -212,136 +212,107 @@ class WorkflowTests(unittest.TestCase):
             persisted = json.loads(config.prepare_report_path.read_text(encoding="utf-8"))
             self.assertEqual(persisted, report)
 
-    def test_unreported_segment_recovery_rejects_failed_log_and_gap(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            config = self._config(root, scope="full")
+    def test_unreported_failed_or_incomplete_prepare_is_preserved_then_rebuilt(self):
+        for failure in ("failed_log", "gap", "corrupt", "short", "newer_failed_log"):
+            with self.subTest(failure=failure), tempfile.TemporaryDirectory() as raw:
+                config = self._config(Path(raw), scope="full")
+                config.inputs_dir.mkdir(parents=True)
+                names = ["segment_0000.mkv", "segment_0002.mkv" if failure == "gap" else "segment_0001.mkv"]
+                for name in names:
+                    (config.inputs_dir / name).write_bytes(b"old")
+                config.logs_dir.mkdir(parents=True)
+                log = config.logs_dir / "prepare.log"
+                log.write_text("return_code=" + ("1" if failure == "failed_log" else "0") + "\nelapsed_seconds=1\n")
+                if failure == "newer_failed_log":
+                    import os
+                    os.utime(log, (100, 100))
+                    (config.logs_dir / "prepare.attempt02.log").write_text("return_code=1\nelapsed_seconds=1\n")
+                def probe(_, path):
+                    old = path.read_bytes() == b"old"
+                    if old and failure == "corrupt":
+                        raise ExperimentError("broken container")
+                    return _video_probe(str(path), duration=2 if old and failure == "short" else 10)
+                def extract(command, log_path, **kwargs):
+                    self.assertEqual([], list(config.inputs_dir.iterdir()))
+                    for index in range(2):
+                        (config.inputs_dir / f"segment_{index:04d}.mkv").write_bytes(b"new")
+                    log_path.write_text("return_code=0\nelapsed_seconds=2\n")
+                    return 2.0
+                with patch("jasna_picture.workflow._probe", side_effect=probe), patch(
+                    "jasna_picture.workflow._source_video_origin", return_value={"source_origin_seconds": 0}
+                ), patch("jasna_picture.workflow._run_streamed", side_effect=extract) as run:
+                    records, report = _prepare_segments(config, 20)
+                    _, reused = _prepare_segments(config, 20)
+                self.assertEqual(1, run.call_count)
+                self.assertTrue(reused["reused"])
+                self.assertFalse(report["reused"])
+                self.assertEqual(2, len(records))
+                preserved = Path(report["preserved_interrupted_inputs"])
+                self.assertEqual(sorted(names), sorted(p.name for p in preserved.iterdir()))
+                self.assertTrue(all(p.read_bytes() == b"old" for p in preserved.iterdir()))
+                self.assertTrue(report["recovery_reason"])
+
+    def test_prepare_failure_then_retry_completes_without_manual_cleanup(self):
+        with tempfile.TemporaryDirectory() as raw:
+            config = self._config(Path(raw), scope="full")
+            attempts = []
+            def extract(command, log_path, **kwargs):
+                attempts.append(log_path)
+                (config.inputs_dir / "segment_0000.mkv").write_bytes(b"partial" if len(attempts) == 1 else b"complete")
+                log_path.write_text("return_code=" + ("1" if len(attempts) == 1 else "0") + "\nelapsed_seconds=1\n")
+                if len(attempts) == 1:
+                    raise ExperimentError("simulated disk full")
+                return 1.0
+            def probe(_, path):
+                return _video_probe(str(path), duration=10 if path.read_bytes() == b"partial" else 30)
+            with patch("jasna_picture.workflow._probe", side_effect=probe), patch(
+                "jasna_picture.workflow._source_video_origin", return_value={"source_origin_seconds": 0}
+            ), patch("jasna_picture.workflow._run_streamed", side_effect=extract):
+                with self.assertRaisesRegex(ExperimentError, "disk full"):
+                    _prepare_segments(config, 30)
+                self.assertFalse(config.prepare_report_path.exists())
+                _, report = _prepare_segments(config, 30)
+                _, reused = _prepare_segments(config, 30)
+            self.assertEqual(2, len(attempts))
+            self.assertNotEqual(attempts[0], attempts[1])
+            self.assertTrue(reused["reused"])
+            self.assertEqual(b"partial", (Path(report["preserved_interrupted_inputs"]) / "segment_0000.mkv").read_bytes())
+
+    def test_invalid_prepare_never_replaces_existing_downstream_work(self):
+        with tempfile.TemporaryDirectory() as raw:
+            config = self._config(Path(raw), scope="full")
             config.inputs_dir.mkdir(parents=True)
-            for index in range(2):
-                (config.inputs_dir / f"segment_{index:04d}.mkv").write_bytes(b"segment")
-            config.logs_dir.mkdir(parents=True)
-            (config.logs_dir / "prepare.log").write_text(
-                "return_code=1\nelapsed_seconds=1.250\n", encoding="utf-8"
-            )
-            probes = [
-                _video_probe("segment-0", duration=10.0),
-                _video_probe("segment-1", duration=10.0),
-            ]
+            segment = config.inputs_dir / "segment_0001.mkv"
+            segment.write_bytes(b"partial")
+            config.restored_dir.mkdir()
+            restored = config.restored_dir / "segment_0000.mkv"
+            restored.write_bytes(b"completed picture fixture")
+            with patch("jasna_picture.workflow._run_streamed") as run:
+                with self.assertRaisesRegex(ExperimentError, "已有画面产物"):
+                    _prepare_segments(config, 20)
+            run.assert_not_called()
+            self.assertEqual(b"partial", segment.read_bytes())
+            self.assertEqual(b"completed picture fixture", restored.read_bytes())
+
+
+    def test_full_workflow_without_history_publishes_only_technical_candidate(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            config = self._config(root, scope="full")
+            config.source.write_bytes(b"source fixture")
             with (
-                patch("jasna_picture.workflow._probe", side_effect=probes),
-                self.assertRaisesRegex(ExperimentError, "成功抽取日志"),
+                patch("jasna_picture.workflow.preflight_workflow", return_value={"source_duration_seconds": 60}),
+                patch("jasna_picture.workflow._gpu_utilization_percent", return_value=None),
+                patch("jasna_picture.workflow._prepare_segments", return_value=([], {})),
+                patch("jasna_picture.workflow._concat_and_verify", return_value={"status": "technical_checks_passed"}),
             ):
-                _prepare_segments(config, 20.0)
-            self.assertFalse(config.prepare_report_path.exists())
-
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            config = self._config(root, scope="full")
-            config.inputs_dir.mkdir(parents=True)
-            (config.inputs_dir / "segment_0000.mkv").write_bytes(b"segment")
-            (config.inputs_dir / "segment_0002.mkv").write_bytes(b"segment")
-            config.logs_dir.mkdir(parents=True)
-            (config.logs_dir / "prepare.log").write_text(
-                "return_code=0\nelapsed_seconds=1.250\n", encoding="utf-8"
-            )
-            with self.assertRaisesRegex(ExperimentError, "序列不连续"):
-                _prepare_segments(config, 20.0)
-            self.assertFalse(config.prepare_report_path.exists())
-
-    def test_full_gate_allows_other_source_but_requires_frozen_route(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            config = self._config(root, scope="full")
-            config.source.write_bytes(b"source")
-            accepted_source = root / "accepted-source.mp4"
-            accepted_source.write_bytes(b"different-source")
-            stat = accepted_source.stat()
-            report = {
-                "status": "technical_checks_passed",
-                "scope": "acceptance",
-                "source_identity": {
-                    "path": str(accepted_source.resolve()),
-                    "size": stat.st_size,
-                    "mtime_ns": stat.st_mtime_ns,
-                },
-                "route": {
-                    "detector": "lada-yolo-v4",
-                    "restorer": "basicvsrpp",
-                    "codec": "hevc",
-                    "cq": 28,
-                    "max_clip_size": 90,
-                    "temporal_overlap": 8,
-                },
-            }
-            lineage = _gate_lineage(config, report)
-            self.assertEqual(lineage["lineage_source"], "report")
-            self.assertEqual(lineage["policy"], "global_frozen_route_gate")
-            self.assertFalse(lineage["source_identity_match"]["all"])
-            self.assertFalse(lineage["current_source_30m_human_reviewed"])
-            self.assertEqual(
-                lineage["informational_warnings"][0]["code"],
-                "GLOBAL_ROUTE_GATE_SOURCE_DIFFERS",
-            )
-
-            report["route"]["cq"] = 27
-            with self.assertRaisesRegex(ExperimentError, "Jasna 路线不匹配"):
-                _gate_lineage(config, report)
-
-    def test_full_report_persists_global_route_gate_source_warning(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            config = self._config(root, scope="full")
-            config.source.write_bytes(b"source")
-            accepted_source = root / "accepted-source.mp4"
-            accepted_source.write_bytes(b"different-source")
-            accepted_stat = accepted_source.stat()
-            route = {
-                "detector": "lada-yolo-v4",
-                "restorer": "basicvsrpp",
-                "codec": "hevc",
-                "cq": 28,
-                "max_clip_size": 90,
-                "temporal_overlap": 8,
-            }
-            gate_report = {
-                "status": "technical_checks_passed",
-                "scope": "acceptance",
-                "source_identity": {
-                    "path": str(accepted_source.resolve()),
-                    "size": accepted_stat.st_size,
-                    "mtime_ns": accepted_stat.st_mtime_ns,
-                },
-                "route": route,
-            }
-            config.gate_report.write_text(json.dumps(gate_report), encoding="utf-8")
-            gate_lineage = _gate_lineage(config, gate_report)
-            current_stat = config.source.stat()
-            final_report = {
-                "status": "technical_checks_passed",
-                "scope": "full",
-                "source_identity": {
-                    "path": str(config.source.resolve()),
-                    "size": current_stat.st_size,
-                    "mtime_ns": current_stat.st_mtime_ns,
-                },
-                "route": route,
-            }
-
-            persisted = _persist_global_route_gate_evidence(
-                config,
-                final_report,
-                gate_lineage,
-            )
-            on_disk = json.loads(config.final_report_path.read_text(encoding="utf-8"))
-
-            self.assertEqual(persisted, on_disk)
-            self.assertEqual(on_disk["release_status"], "candidate_for_human_review")
-            self.assertEqual(on_disk["human_review_status"], "pending")
-            self.assertFalse(on_disk["current_source_30m_human_reviewed"])
-            self.assertEqual(
-                on_disk["informational_warnings"][0]["code"],
-                "GLOBAL_ROUTE_GATE_SOURCE_DIFFERS",
-            )
+                result = run_picture_workflow(config, confirm_gpu_ready=True)
+            self.assertIsNone(result["gate_status"])
+            report = json.loads(config.final_report_path.read_text(encoding="utf-8"))
+            self.assertEqual("candidate_for_human_review", report["release_status"])
+            self.assertEqual("pending", report["human_review_status"])
+            self.assertFalse(report["current_source_30m_human_reviewed"])
+            self.assertNotIn("route_gate", report)
 
     def test_full_final_report_records_real_mapping_and_seams(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -405,34 +376,40 @@ class WorkflowTests(unittest.TestCase):
             with self.assertRaisesRegex(ExperimentError, "--confirm-gpu-ready"):
                 run_picture_workflow(config)
 
-    def test_full_rejects_60_second_report(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
-            config = self._config(root, scope="full")
-            root.joinpath("gate.json").write_text(
-                json.dumps({"status": "technical_checks_passed"}), encoding="utf-8"
-            )
-            with self.assertRaisesRegex(ExperimentError, "30 分钟 acceptance"):
-                run_picture_workflow(
-                    config,
-                    confirm_gpu_ready=True,
-                    confirm_gate_viewed=True,
-                )
+    def test_full_does_not_read_missing_or_stale_gate(self):
+        with tempfile.TemporaryDirectory() as raw:
+            config = self._config(Path(raw), scope="full")
+            with patch("jasna_picture.workflow._load_json", side_effect=AssertionError("ordinary work has no history gate")):
+                self.assertEqual({}, _require_gate(config, confirm_gpu_ready=True, confirm_gate_viewed=False))
 
-    def test_full_rejects_gate_without_technical_pass(self) -> None:
-        with tempfile.TemporaryDirectory() as temp_dir:
-            root = Path(temp_dir)
+    def test_acceptance_requires_short_report_and_actual_viewing_confirmation(self):
+        with tempfile.TemporaryDirectory() as raw:
+            config = self._config(Path(raw))
+            config.gate_report.write_text('{"status":"failed"}', encoding="utf-8")
+            with self.assertRaisesRegex(ExperimentError, "短样技术检查没有通过"):
+                _require_gate(config, confirm_gpu_ready=True, confirm_gate_viewed=True)
+            config.gate_report.write_text('{"status":"technical_checks_passed"}', encoding="utf-8")
+            with self.assertRaisesRegex(ExperimentError, "--confirm-gate-viewed"):
+                _require_gate(config, confirm_gpu_ready=True, confirm_gate_viewed=False)
+            self.assertEqual("technical_checks_passed", _require_gate(config, confirm_gpu_ready=True, confirm_gate_viewed=True)["status"])
+
+    def test_moved_jasna_keeps_manifest_and_completed_segments(self):
+        from dataclasses import replace
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
             config = self._config(root, scope="full")
-            root.joinpath("gate.json").write_text(
-                json.dumps({"status": "failed", "scope": "acceptance"}),
-                encoding="utf-8",
-            )
-            with self.assertRaisesRegex(ExperimentError, "前级技术检查没有通过"):
-                run_picture_workflow(
-                    config,
-                    confirm_gpu_ready=True,
-                    confirm_gate_viewed=True,
-                )
+            config.source.write_bytes(b"source")
+            first = _load_or_create_manifest(config)
+            config.restored_dir.mkdir()
+            completed = config.restored_dir / "segment_0000.mkv"
+            completed.write_bytes(b"completed segment")
+            before = config.manifest_path.read_bytes()
+            moved = replace(config, jasna=root / "new-install/jasna.exe")
+            self.assertEqual(first, _load_or_create_manifest(moved))
+            self.assertEqual(before, config.manifest_path.read_bytes())
+            self.assertEqual(b"completed segment", completed.read_bytes())
+            with self.assertRaisesRegex(ExperimentError, "拒绝混用"):
+                _load_or_create_manifest(replace(moved, segment_seconds=10))
 
     def test_manifest_refuses_mixed_output(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -448,7 +425,7 @@ class WorkflowTests(unittest.TestCase):
     def test_preflight_requires_real_nonempty_engines(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
             root = Path(temp_dir)
-            config = self._config(root)
+            config = self._config(root, scope="full")
             for path in (
                 config.source,
                 config.jasna,
@@ -457,10 +434,6 @@ class WorkflowTests(unittest.TestCase):
             ):
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(b"x")
-            config.gate_report.write_text(
-                json.dumps({"status": "technical_checks_passed"}),
-                encoding="utf-8",
-            )
             for engine in required_engine_paths(config.jasna):
                 engine.parent.mkdir(parents=True, exist_ok=True)
                 engine.write_bytes(b"engine")
@@ -482,6 +455,114 @@ class WorkflowTests(unittest.TestCase):
                 result = preflight_workflow(config)
             self.assertEqual(result["status"], "preflight_passed")
             self.assertEqual(len(result["engines"]), 7)
+
+
+    def test_decoder_evidence_includes_software_upload_without_mislabeling_it(self) -> None:
+        fallback = "Using FFmpeg software decoding and uploading frames to CUDA"
+        cases = (
+            ("Using VALI NVDEC decoder", "vali-nvdec"),
+            ("Using PyAV CUDA decoder", "pyav-cuda"),
+            (fallback.upper(), "ffmpeg-software-cuda"),
+            ("Using VALI NVDEC decoder\n" + fallback, "ffmpeg-software-cuda"),
+        )
+        with tempfile.TemporaryDirectory() as temp_dir:
+            log = Path(temp_dir) / "decoder.log"
+            for text, expected in cases:
+                with self.subTest(expected=expected, text=text):
+                    log.write_text(text, encoding="utf-8")
+                    self.assertEqual(_require_decoder(log), expected)
+            log.write_text("Processing finished without decoder evidence", encoding="utf-8")
+            with self.assertRaisesRegex(ExperimentError, "解码方式"):
+                _require_decoder(log)
+
+    def test_software_decode_segment_completes_and_reuses_without_rerun(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            root = Path(temp_dir)
+            config = self._config(root, scope="full")
+            input_path = config.inputs_dir / "segment_0000.mkv"
+            input_path.parent.mkdir(parents=True)
+            input_path.write_bytes(b"source")
+            working = config.restored_dir / "segment_0000.restored.working.mkv"
+            output = config.restored_dir / "segment_0000.restored.mkv"
+            old_log = config.logs_dir / "process-segment_0000.log"
+            old_log.parent.mkdir(parents=True)
+            old_log.write_text("old failed attempt\nreturn_code=1\n", encoding="utf-8")
+            script = (
+                "from pathlib import Path\n"
+                "import time\n"
+                "print('Using FFmpeg software decoding and uploading frames to CUDA', flush=True)\n"
+                "time.sleep(0.2)\n"
+                f"Path({str(working)!r}).write_bytes(b'processed')\n"
+                "print('Processing video: Processed: 00:10 (300f)', flush=True)\n"
+            )
+
+            def probe(_tool, path):
+                return _video_probe(str(path), codec="wmv2" if path == input_path else "hevc", duration=10.0)
+
+            with (
+                patch("jasna_picture.workflow._probe", side_effect=probe),
+                patch("jasna_picture.workflow.build_jasna_command", return_value=[sys.executable, "-c", script]),
+            ):
+                report = _process_segment(config, input_path, mirror_output=False)
+                with patch("jasna_picture.workflow._run_streamed") as rerun:
+                    reused = _process_segment(config, input_path, mirror_output=False)
+                rerun.assert_not_called()
+
+            self.assertEqual(report["status"], "technical_checks_passed")
+            self.assertEqual(report["decoder_backend"], "ffmpeg-software-cuda")
+            self.assertEqual(reused["decoder_backend"], "ffmpeg-software-cuda")
+            self.assertTrue(reused["reused"])
+            self.assertEqual(output.read_bytes(), b"processed")
+            self.assertEqual(input_path.read_bytes(), b"source")
+            self.assertEqual(old_log.read_text(encoding="utf-8"), "old failed attempt\nreturn_code=1\n")
+            self.assertNotEqual(Path(report["log"]), old_log)
+
+    def test_completed_software_decode_media_can_recover_missing_report(self) -> None:
+        for working_file in (True, False):
+            with self.subTest(working_file=working_file), tempfile.TemporaryDirectory() as temp_dir:
+                root = Path(temp_dir)
+                config = self._config(root, scope="full")
+                input_path = config.inputs_dir / "segment_0000.mkv"
+                input_path.parent.mkdir(parents=True)
+                input_path.write_bytes(b"source")
+                output = config.restored_dir / "segment_0000.restored.mkv"
+                media = output.with_name("segment_0000.restored.working.mkv") if working_file else output
+                media.parent.mkdir(parents=True)
+                media.write_bytes(b"complete")
+                log = config.logs_dir / "process-segment_0000.log"
+                log.parent.mkdir(parents=True)
+                log.write_text(
+                    "Using FFmpeg software decoding and uploading frames to CUDA\n"
+                    "return_code=0\nelapsed_seconds=1.5\n",
+                    encoding="utf-8",
+                )
+                def probe(_tool, path):
+                    return _video_probe(str(path), codec="wmv2" if path == input_path else "hevc", duration=10.0)
+                with (
+                    patch("jasna_picture.workflow._probe", side_effect=probe),
+                    patch("jasna_picture.workflow._run_streamed") as rerun,
+                ):
+                    report = _process_segment(config, input_path, mirror_output=False)
+                rerun.assert_not_called()
+                self.assertTrue(report["recovered_working_file"])
+                self.assertTrue(report["reused"])
+                self.assertEqual(report["decoder_backend"], "ffmpeg-software-cuda")
+                self.assertEqual(output.read_bytes(), b"complete")
+
+    def test_software_decode_message_does_not_hide_process_failure(self) -> None:
+        with tempfile.TemporaryDirectory() as temp_dir:
+            script = (
+                "import sys; "
+                "print('Using FFmpeg software decoding and uploading frames to CUDA', flush=True); "
+                "sys.exit(7)"
+            )
+            with self.assertRaisesRegex(ExperimentError, "退出码 7"):
+                _run_streamed(
+                    [sys.executable, "-c", script],
+                    Path(temp_dir) / "failed.log",
+                    mirror_output=False,
+                    timeout_seconds=5,
+                )
 
     def test_processed_pair_must_be_hevc(self) -> None:
         with tempfile.TemporaryDirectory() as temp_dir:
@@ -567,7 +648,7 @@ class WorkflowTests(unittest.TestCase):
                 ),
                 patch("jasna_picture.workflow._run_streamed", side_effect=write_fresh_output),
                 patch(
-                    "jasna_picture.workflow._require_hardware_decoder",
+                    "jasna_picture.workflow._require_decoder",
                     return_value="vali-nvdec",
                 ),
                 patch(

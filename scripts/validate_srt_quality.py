@@ -8,6 +8,7 @@ from __future__ import annotations
 import argparse
 import json
 import re
+import sys
 from collections import Counter
 from dataclasses import dataclass
 from pathlib import Path
@@ -111,6 +112,13 @@ def main() -> int:
     if args.report:
         args.report.parent.mkdir(parents=True, exist_ok=True)
         args.report.write_text(json.dumps(report, ensure_ascii=False, indent=2), encoding="utf-8")
+    if failures:
+        print(
+            f"识别结果出现大量重复：同一句占 {report['top_count']}/{report['blocks']} "
+            f"（{report['top_ratio']:.1%}），最长连续重复 {report['max_consecutive_count']} 条。"
+            "已保留识别结果和质量报告，修正识别问题后再继续。",
+            file=sys.stderr,
+        )
     print(json.dumps(report, ensure_ascii=True))
     return 1 if failures else 0
 

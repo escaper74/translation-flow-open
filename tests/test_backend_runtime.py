@@ -42,7 +42,7 @@ class BackendRuntimeTests(unittest.TestCase):
             report = inspect_environment(mode="full", provider="codex", tools=Path(temp))
             self.assertEqual("missing_paths", report["status"])
             missing = {item["name"] for item in report["checks"] if not item["present"]}
-            self.assertTrue({"codex_cli", "whisper", "ffmpeg", "jasna", "acceptance_report"} <= missing)
+            self.assertTrue({"codex_cli", "whisper", "ffmpeg", "jasna"} <= missing)
 
     def test_existing_codex_path_is_only_path_evidence(self):
         with tempfile.TemporaryDirectory() as temp:

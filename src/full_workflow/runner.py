@@ -340,6 +340,11 @@ class FullWorkflowRunner:
             expected_gates.pop("picture_gpu_after_asr_fusion", None)
             comparable["gates"] = actual_gates
             expected_comparable = {**expected, "gates": expected_gates}
+            # The former global acceptance report is no longer consumed by full
+            # jobs; moving the tool root must not invalidate completed work.
+            for value in (comparable, expected_comparable):
+                value["picture"] = dict(value.get("picture", {}))
+                value["picture"].pop("acceptance_gate_report", None)
             if comparable != expected_comparable:
                 raise ValueError("顶层 workflow 目录与本次源片、模式或产物不匹配")
             return expected

@@ -6,7 +6,7 @@ import subprocess
 from typing import Any
 
 
-SHORT_START = "01:34:00"
+SHORT_START = "00:00:00"
 SHORT_SECONDS = 60
 LONG_START = "01:30:00"
 LONG_SECONDS = 30 * 60
@@ -20,6 +20,7 @@ class ExperimentPaths:
     jasna: Path
     ffmpeg: Path
     ffprobe: Path
+    short_start: str = SHORT_START
 
     @property
     def inputs_dir(self) -> Path:
@@ -121,7 +122,7 @@ class ExperimentPlan:
                 "cq": 28,
             },
             "ranges": {
-                "short": {"start": SHORT_START, "requested_seconds": SHORT_SECONDS},
+                "short": {"start": self.paths.short_start, "requested_seconds": SHORT_SECONDS},
                 "long": {
                     "start": LONG_START,
                     "requested_seconds": LONG_SECONDS,
@@ -204,7 +205,7 @@ def build_experiment_plan(paths: ExperimentPaths) -> ExperimentPlan:
         _ffmpeg_prefix(paths.ffmpeg)
         + [
             "-ss",
-            SHORT_START,
+            paths.short_start,
             "-i",
             str(paths.source),
             "-t",

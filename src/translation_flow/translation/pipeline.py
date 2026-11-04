@@ -432,6 +432,13 @@ def _repair_messages(
     ]
 
 
+def validate_cache_path(cache_root: Path) -> None:
+    """Check the deepest batch path before ASR or any provider request."""
+    longest = Path(cache_root).resolve() / "v1" / ("x" * 64) / "batches" / "kana_repair" / "000001_000060_0000000000.json"
+    if os.name == "nt" and len(str(longest).encode("utf-16-le")) // 2 >= 260:
+        raise ValueError("输出目录过深，Windows 无法写入字幕批次缓存；请选择较短的保存位置（例如磁盘根目录下的成片文件夹）。")
+
+
 def _cache_path(cache_dir: Path, phase: str, batch: Sequence[SubtitleCue]) -> Path:
     ids = ",".join(str(cue.index) for cue in batch)
     suffix = hashlib.sha256(ids.encode("ascii")).hexdigest()[:10]
@@ -832,6 +839,7 @@ def run_translation(
     if target_report is not None and target_report.exists():
         raise FileExistsError(f"refusing to overwrite translation report: {target_report}")
 
+    validate_cache_path(cache_root)
     source = parse_srt(input_srt)
     if concurrency not in (1, 2):
         raise ValueError("translation concurrency currently supports only 1 or 2")

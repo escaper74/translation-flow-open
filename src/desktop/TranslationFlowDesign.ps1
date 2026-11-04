@@ -84,7 +84,7 @@ function Set-DesignNavigation([string]$Page) {
 }
 
 function Open-DesignInput([string]$Mode) {
-    if ($script:IsRunning -or $null -ne $script:AccessBridge) { Set-UiPage 'tasks'; return }
+    if (-not (Start-TaskDraft)) { return }
     Select-ComboBoxItemByTag $WhisperModelBox $WhisperAModel
     $script:CurrentWhisperAModel = $WhisperAModel
     $script:PendingQueueResumeId='';$script:PendingSrtRequestPath='';$script:SelectedFiles=@()
@@ -103,9 +103,9 @@ function Get-DesignModeLabel([string]$Mode) {
 
 function New-DesignTaskCard($Item,[string]$Kind,$History=$null) {
     $active=$Kind -eq 'active';$waiting=$Kind -eq 'waiting'
-    $card=Read-DesignXaml ('<Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Background="'+$(if($active){'#EFFBFA'}else{'White'})+'" BorderBrush="'+$(if($active){'#88DAD4'}else{'#E3E9EF'})+'" BorderThickness="1" CornerRadius="16" Padding="20" Margin="0,0,0,10"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="'+$(if($active){'200'}else{'108'})+'"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border CornerRadius="10" Background="#EDF6F6" Margin="0,0,20,0"><Image Name="Thumb" Height="'+$(if($active){'142'}else{'64'})+'"/></Border><StackPanel Grid.Column="1"><TextBlock Name="Title" FontSize="'+$(if($active){'21'}else{'17'})+'" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/><TextBlock Name="Mode" Foreground="#7A899A" Margin="0,5,0,0"/><TextBlock Name="Status" Foreground="#00858C" FontSize="17" FontWeight="Medium" Margin="0,9,0,0"/><Grid Name="ProgressRow" Margin="0,10,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="60"/></Grid.ColumnDefinitions><ProgressBar Name="Progress" Height="8" Minimum="0" Maximum="100" Foreground="#00B4AB" Background="#D4F0EE" BorderThickness="0"/><TextBlock Name="Percent" Grid.Column="1" HorizontalAlignment="Right" Foreground="#67768A"/></Grid><DockPanel Name="Actions" Margin="0,5,0,0"><StackPanel Name="Buttons" DockPanel.Dock="Right" Orientation="Horizontal"/><TextBlock Name="Elapsed" Foreground="#8390A0" VerticalAlignment="Center"/></DockPanel></StackPanel></Grid></Border>')
+    $card=Read-DesignXaml ('<Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Background="'+$(if($active){'#EFFBFA'}else{'White'})+'" BorderBrush="'+$(if($active){'#88DAD4'}else{'#E3E9EF'})+'" BorderThickness="1" CornerRadius="16" Padding="20" Margin="0,0,0,10"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="'+$(if($active){'200'}else{'108'})+'"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border CornerRadius="10" Background="#EDF6F6" Margin="0,0,20,0"><Image Name="Thumb" Height="'+$(if($active){'142'}else{'64'})+'"/></Border><StackPanel Grid.Column="1"><TextBlock Name="Title" FontSize="'+$(if($active){'21'}else{'17'})+'" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/><TextBlock Name="Mode" Foreground="#7A899A" Margin="0,5,0,0"/><TextBlock Name="OutputLocation" Foreground="#7A899A" FontSize="13" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/><TextBlock Name="Status" Foreground="#00858C" FontSize="17" FontWeight="Medium" Margin="0,9,0,0"/><Grid Name="ProgressRow" Margin="0,10,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="60"/></Grid.ColumnDefinitions><ProgressBar Name="Progress" Height="8" Minimum="0" Maximum="100" Foreground="#00B4AB" Background="#D4F0EE" BorderThickness="0"/><TextBlock Name="Percent" Grid.Column="1" HorizontalAlignment="Right" Foreground="#67768A"/></Grid><DockPanel Name="Actions" Margin="0,5,0,0"><StackPanel Name="Buttons" DockPanel.Dock="Right" Orientation="Horizontal"/><TextBlock Name="Elapsed" Foreground="#8390A0" VerticalAlignment="Center"/></DockPanel></StackPanel></Grid></Border>')
     if(-not $active){
-        $card=Read-DesignXaml '<Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Background="White" BorderBrush="#E3E9EF" BorderThickness="1" CornerRadius="16" Padding="14" Margin="0,0,0,10"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="104"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><Border CornerRadius="10" Background="#EDF6F6" Margin="0,0,18,0"><Image Name="Thumb" Height="68"/></Border><StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Name="Title" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/><TextBlock Name="Mode" Foreground="#7A899A" FontSize="13" Margin="0,3,0,0"/><TextBlock Name="Status" Foreground="#00858C" FontSize="14" Margin="0,3,0,0"/><Grid Name="ProgressRow" Visibility="Collapsed"/></StackPanel><StackPanel Name="Buttons" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0"/></Grid></Border>'
+        $card=Read-DesignXaml '<Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Background="White" BorderBrush="#E3E9EF" BorderThickness="1" CornerRadius="16" Padding="14" Margin="0,0,0,10"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="104"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><Border CornerRadius="10" Background="#EDF6F6" Margin="0,0,18,0"><Image Name="Thumb" Height="68"/></Border><StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Name="Title" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/><TextBlock Name="Mode" Foreground="#7A899A" FontSize="13" Margin="0,3,0,0"/><TextBlock Name="OutputLocation" Foreground="#7A899A" FontSize="13" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/><TextBlock Name="Status" Foreground="#00858C" FontSize="14" Margin="0,3,0,0"/><Grid Name="ProgressRow" Visibility="Collapsed"/></StackPanel><StackPanel Name="Buttons" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0"/></Grid></Border>'
     }
     $path=$(if($null -ne $History){$History.SourcePath}else{[string](Get-JsonProperty $Item 'source' '')})
     $card.FindName('Title').Text=[IO.Path]::GetFileName($path)
@@ -113,6 +113,21 @@ function New-DesignTaskCard($Item,[string]$Kind,$History=$null) {
     Set-DesignThumbnail ($card.FindName('Thumb')) $path
     $mode=$(if($null -ne $History){$History.ModeLabel}else{Get-DesignModeLabel ([string](Get-JsonProperty $Item 'mode' 'translation'))})
     $card.FindName('Mode').Text=$mode
+    $outputDirectory=''
+    if ($null -ne $History) { $outputDirectory=[string]$History.OutputDirectory }
+    else {
+        # Queue requests are stored at <output>/<workflow>/<job>/request.json.
+        $requestPath=[string](Get-JsonProperty $Item 'request_path' '')
+        if ([IO.Path]::IsPathRooted($requestPath)) {
+            $directory=[IO.Directory]::GetParent($requestPath)
+            for($level=0;$level -lt 2 -and $null -ne $directory;$level++){ $directory=$directory.Parent }
+            if ($null -ne $directory) { $outputDirectory=$directory.FullName }
+        }
+    }
+    $location=$card.FindName('OutputLocation')
+    $location.Text='保存到：'+$outputDirectory
+    $location.ToolTip=$outputDirectory
+    $location.Visibility=$(if($outputDirectory){'Visible'}else{'Collapsed'})
     $status=[string](Get-JsonProperty $Item 'status' '')
     if ($null -ne $Item -and (Test-QueueItemPaused $Item)) { $status='paused' }
     $stage=[string](Get-JsonProperty $Item 'stage' '')
@@ -277,15 +292,16 @@ function Initialize-Design {
     $Window.FindName('MinimizeButton').Add_Click({$Window.WindowState='Minimized'})
     $Window.FindName('MaximizeButton').Add_Click({$Window.WindowState=$(if($Window.WindowState -eq 'Maximized'){'Normal'}else{'Maximized'})})
     $Window.FindName('CloseWindowButton').Add_Click({$Window.Close()})
+    $Window.FindName('PictureSampleButton').Add_Click({$Window.FindName('SettingsOverlay').Visibility='Collapsed'; Open-DesignInput 'picture_only'})
     $Window.FindName('HomePictureButton').Add_Click({Open-DesignInput 'picture_only'})
     $Window.FindName('HomeTranslationButton').Add_Click({Open-DesignInput 'translation'})
     $Window.FindName('SetupBackButton').Add_Click({Set-UiPage 'home'})
-    $Window.FindName('TaskNewButton').Add_Click({Set-UiPage 'home'})
+    $Window.FindName('TaskNewButton').Add_Click({$NewTaskButton.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))})
     $Window.FindName('HomeViewAllButton').Add_Click({Show-DeliveryLibrary})
     $Window.FindName('SettingsButton').Add_Click({$Window.FindName('SettingsOverlay').Visibility='Visible'})
     $Window.FindName('ProviderSettingsButton').Add_Click({$Window.FindName('SettingsOverlay').Visibility='Visible'})
     $Window.FindName('CloseSettingsButton').Add_Click({$Window.FindName('SettingsOverlay').Visibility='Collapsed'})
-    $OutputDirectoryBox.Add_TextChanged({$label=$Window.FindName('OutputFolderLabel');$label.Text=$(if($OutputDirectoryBox.Text -eq (Join-Path $ProjectRoot 'deliverables')){'成品文件夹'}else{Split-Path -Leaf $OutputDirectoryBox.Text});$label.ToolTip=$OutputDirectoryBox.Text})
+    $OutputDirectoryBox.Add_TextChanged({$label=$Window.FindName('OutputFolderLabel');$label.Text=$(if($OutputDirectoryBox.Text -eq $script:DefaultOutputDirectory){'成品文件夹'}else{Split-Path -Leaf $OutputDirectoryBox.Text});$label.ToolTip=$OutputDirectoryBox.Text})
     $ProviderBox.Add_SelectionChanged({$Window.FindName('ProviderSettingsButton').Content='翻译服务  ·  '+[string]$ProviderBox.SelectedItem.Tag+'  ›'})
     $Window.FindName('RecentPlayButton').Add_Click({if($script:RecentDesignMedia -and [IO.File]::Exists($script:RecentDesignMedia)){Start-Process -FilePath $script:RecentDesignMedia}})
     $script:RecentDesignMedia=''
