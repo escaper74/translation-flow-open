@@ -109,6 +109,9 @@ class Harness:
             self.successes.append(("context", 0))
             return Response(envelope(self.name, "问候场景"))
         items = json.loads(user[user.rfind('{"items"'):])["items"]
+        if system.startswith("只检查给出的日文"):
+            self.successes.append(("text_check", 0))
+            return Response(envelope(self.name, json.dumps({"remove_ids": [], "uncertain_ids": [], "note": ""})))
         phase = "probe" if system.startswith("Translate the single") else (
             "polish" if system.startswith("对照日文润色") else "initial")
         if self.fail_polish and phase == "polish" and items[0]["id"] == 2:
@@ -216,7 +219,7 @@ class VideoApiRunnerTests(unittest.TestCase):
                 report = json.loads((request.output_dir / ".translation-flow" / request.job_id / "translation.report.json").read_text())
                 self.assertEqual(2, report["concurrency"])
                 self.assertEqual(4, report["translated_count"])
-                self.assertEqual(10, len(harness.requests))  # probe + context + 4 initial + 4 polish
+                self.assertEqual(11, len(harness.requests))  # probe + text check + context + 4 initial + 4 polish
                 self.assertEqual("passed", result["technical_validation"]["status"])
                 for url, body in harness.requests:
                     self.assertEqual(resolve_endpoint(name).url, url)
@@ -296,7 +299,7 @@ class VideoApiRunnerTests(unittest.TestCase):
             self.assertEqual(1, harness.asr_calls)
             counts = Counter(x for x in harness.successes if x[0] != "probe")
             self.assertTrue(all(count == 1 for count in counts.values()), counts)
-            self.assertEqual(9, len(counts))
+            self.assertEqual(10, len(counts))
 
     def test_changed_configuration_or_media_cannot_reuse_terminal(self):
         with tempfile.TemporaryDirectory() as temp:
@@ -316,7 +319,7 @@ class VideoApiRunnerTests(unittest.TestCase):
             with self.assertRaisesRegex(ValueError, "source or timeline"):
                 harness.runner(request, key="", on_asr_ready=callback).run()
             callback.assert_not_called()
-            self.assertEqual(10, len(harness.requests))
+            self.assertEqual(11, len(harness.requests))
 
     def test_asr_resume_keeps_existing_a_backbone_checks_before_callback(self):
         with tempfile.TemporaryDirectory() as temp:

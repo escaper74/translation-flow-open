@@ -87,6 +87,11 @@ function Open-DesignInput([string]$Mode) {
     if (-not (Start-TaskDraft)) { return }
     Select-ComboBoxItemByTag $WhisperModelBox $WhisperAModel
     $script:CurrentWhisperAModel = $WhisperAModel
+    $script:CurrentAsrMode = 'a_c'
+    $UseCCheckBox.IsChecked = $true
+    $script:SRPreviewStart = $null
+    Select-ComboBoxItemByTag $SuperResolutionHeightBox '1080'
+    Select-ComboBoxItemByTag $SuperResolutionModelBox 'upscayl-lite-4x'
     $script:PendingQueueResumeId='';$script:PendingSrtRequestPath='';$script:SelectedFiles=@()
     $script:ImportPaths=@();$script:ImportAutoDeselected=$false
     $ForceSubtitleTranslationBox.IsChecked=$false;$SubtitleImportPanel.Visibility='Collapsed'
@@ -98,12 +103,12 @@ function Open-DesignInput([string]$Mode) {
 }
 
 function Get-DesignModeLabel([string]$Mode) {
-    switch($Mode) { 'picture_only' {'去马'} 'translation_picture_final' {'去马 + 翻译'} 'media_repackage' {'视频换格式'} 'srt_translation' {'翻译字幕'} default {'翻译'} }
+    switch($Mode) { 'super_resolution' {'轻量超分'} 'translation_super_resolution' {'翻译 + 超分'} 'picture_only' {'去马'} 'translation_picture_final' {'去马 + 翻译'} 'media_repackage' {'视频换格式'} 'srt_translation' {'翻译字幕'} default {'翻译'} }
 }
 
 function New-DesignTaskCard($Item,[string]$Kind,$History=$null) {
     $active=$Kind -eq 'active';$waiting=$Kind -eq 'waiting'
-    $card=Read-DesignXaml ('<Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Background="'+$(if($active){'#EFFBFA'}else{'White'})+'" BorderBrush="'+$(if($active){'#88DAD4'}else{'#E3E9EF'})+'" BorderThickness="1" CornerRadius="16" Padding="20" Margin="0,0,0,10"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="'+$(if($active){'200'}else{'108'})+'"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border CornerRadius="10" Background="#EDF6F6" Margin="0,0,20,0"><Image Name="Thumb" Height="'+$(if($active){'142'}else{'64'})+'"/></Border><StackPanel Grid.Column="1"><TextBlock Name="Title" FontSize="'+$(if($active){'21'}else{'17'})+'" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/><TextBlock Name="Mode" Foreground="#7A899A" Margin="0,5,0,0"/><TextBlock Name="OutputLocation" Foreground="#7A899A" FontSize="13" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/><TextBlock Name="Status" Foreground="#00858C" FontSize="17" FontWeight="Medium" Margin="0,9,0,0"/><Grid Name="ProgressRow" Margin="0,10,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="60"/></Grid.ColumnDefinitions><ProgressBar Name="Progress" Height="8" Minimum="0" Maximum="100" Foreground="#00B4AB" Background="#D4F0EE" BorderThickness="0"/><TextBlock Name="Percent" Grid.Column="1" HorizontalAlignment="Right" Foreground="#67768A"/></Grid><DockPanel Name="Actions" Margin="0,5,0,0"><StackPanel Name="Buttons" DockPanel.Dock="Right" Orientation="Horizontal"/><TextBlock Name="Elapsed" Foreground="#8390A0" VerticalAlignment="Center"/></DockPanel></StackPanel></Grid></Border>')
+    $card=Read-DesignXaml ('<Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Background="'+$(if($active){'#EFFBFA'}else{'White'})+'" BorderBrush="'+$(if($active){'#88DAD4'}else{'#E3E9EF'})+'" BorderThickness="1" CornerRadius="16" Padding="20" Margin="0,0,0,10"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="'+$(if($active){'200'}else{'108'})+'"/><ColumnDefinition Width="*"/></Grid.ColumnDefinitions><Border CornerRadius="10" Background="#EDF6F6" Margin="0,0,20,0"><Image Name="Thumb" Height="'+$(if($active){'142'}else{'64'})+'"/></Border><StackPanel Grid.Column="1"><TextBlock Name="Title" FontSize="'+$(if($active){'21'}else{'17'})+'" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/><TextBlock Name="Mode" Foreground="#7A899A" Margin="0,5,0,0"/><TextBlock Name="OutputLocation" Foreground="#7A899A" FontSize="13" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/><TextBlock Name="Status" Foreground="#00858C" FontSize="17" FontWeight="Medium" Margin="0,9,0,0"/><Grid Name="ProgressRow" Margin="0,10,0,8"><Grid.ColumnDefinitions><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto" MinWidth="60"/></Grid.ColumnDefinitions><ProgressBar Name="Progress" Height="8" Minimum="0" Maximum="100" Foreground="#00B4AB" Background="#D4F0EE" BorderThickness="0"/><TextBlock Name="Percent" Grid.Column="1" Margin="12,0,0,0" HorizontalAlignment="Right" Foreground="#67768A"/></Grid><DockPanel Name="Actions" Margin="0,5,0,0"><StackPanel Name="Buttons" DockPanel.Dock="Right" Orientation="Horizontal"/><TextBlock Name="Elapsed" Foreground="#8390A0" VerticalAlignment="Center"/></DockPanel></StackPanel></Grid></Border>')
     if(-not $active){
         $card=Read-DesignXaml '<Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Background="White" BorderBrush="#E3E9EF" BorderThickness="1" CornerRadius="16" Padding="14" Margin="0,0,0,10"><Grid><Grid.ColumnDefinitions><ColumnDefinition Width="104"/><ColumnDefinition Width="*"/><ColumnDefinition Width="Auto"/></Grid.ColumnDefinitions><Border CornerRadius="10" Background="#EDF6F6" Margin="0,0,18,0"><Image Name="Thumb" Height="68"/></Border><StackPanel Grid.Column="1" VerticalAlignment="Center"><TextBlock Name="Title" FontSize="17" FontWeight="SemiBold" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/><TextBlock Name="Mode" Foreground="#7A899A" FontSize="13" Margin="0,3,0,0"/><TextBlock Name="OutputLocation" Foreground="#7A899A" FontSize="13" Margin="0,3,0,0" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/><TextBlock Name="Status" Foreground="#00858C" FontSize="14" Margin="0,3,0,0"/><Grid Name="ProgressRow" Visibility="Collapsed"/></StackPanel><StackPanel Name="Buttons" Grid.Column="2" Orientation="Horizontal" VerticalAlignment="Center" Margin="14,0,0,0"/></Grid></Border>'
     }
@@ -139,6 +144,16 @@ function New-DesignTaskCard($Item,[string]$Kind,$History=$null) {
         $progress=[Math]::Max(0,[Math]::Min(100,[double](Get-JsonProperty $Item 'progress' 0)))
         $card.FindName('Progress').Value=$progress
         $card.FindName('Percent').Text=$(if($unknown){'识别中'}else{"$([Math]::Round($progress))%"})
+        $work=Get-JsonProperty $Item 'work_progress' $null
+        $view=Get-UiWorkPresentation $stage $work
+        if ($null -ne $view) {
+            $card.FindName('Percent').Text=$view.Text
+            $card.FindName('Progress').Value=$view.Value
+            $card.FindName('Progress').IsIndeterminate=$view.Indeterminate
+            if ($status -ne 'stopping') {
+                $card.FindName('Status').Text=$view.Status + $(if ($view.Secondary) { ' · ' + $view.Secondary } else { '' })
+            }
+        }
         $started=Get-JsonProperty $Item 'started_at' $null
         if($null -ne $started){$elapsed=[Math]::Max(0,([DateTimeOffset]::UtcNow-[DateTimeOffset]::FromUnixTimeSeconds([long]$started)).TotalSeconds);$card.FindName('Elapsed').Text='已用 '+(Format-UiDuration $elapsed)}
     }
@@ -196,6 +211,8 @@ function Update-DesignLibraryCards($State) {
         $card=Read-DesignXaml '<Border xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation" Width="326" Margin="8,0,8,16" Padding="14" CornerRadius="18" BorderBrush="#E3E9EF" BorderThickness="1" Background="White" Cursor="Hand"><StackPanel><Border Background="#EDF6F6" CornerRadius="10"><Image Name="Thumb" Height="168"/></Border><TextBlock Name="Title" FontSize="20" FontWeight="SemiBold" Margin="3,15,3,8" TextTrimming="CharacterEllipsis" TextWrapping="NoWrap"/><TextBlock Name="Description" Foreground="#008F90" Margin="3,0,3,8"/><DockPanel Margin="3,0,3,13"><TextBlock Name="Format" Foreground="#8391A1"/><TextBlock Name="Size" Foreground="#8391A1" HorizontalAlignment="Right"/></DockPanel><Button Name="Play" Content="▶   播放" Height="42"/><Button Name="Cleanup" Content="清理中间文件" Height="36" Margin="0,6,0,0"/></StackPanel></Border>'
         $card.FindName('Title').Text=[IO.Path]::GetFileNameWithoutExtension([string]$item.title);$card.ToolTip=$item.title
         $description=switch([string]$item.kind){'.full-workflow'{'去马 · 中文字幕'}'.picture-workflow'{'去马'}'.media-repackage'{'已换格式'}default{'中文字幕'}}
+        if ($null -ne $item.PSObject.Properties['workflow_mode'] -and $item.workflow_mode -eq 'translation_super_resolution') { $description='轻量超分 · 中文字幕' }
+        if ($item.kind -eq '.super-resolution') { $description='轻量超分'; if ($item.media -like '*.compare.mp4') { $description='短片对照 · 左原画 / 右超分' } }
         $card.FindName('Description').Text='✓  '+$description
         $card.FindName('Format').Text=$(if($item.media){[IO.Path]::GetExtension([string]$item.media).TrimStart('.').ToUpperInvariant()}else{'SRT'})
         $card.FindName('Size').Text=$(if($item.media){'{0:N2} GiB' -f [double]$item.size_gib}else{'字幕文件'})
@@ -294,6 +311,7 @@ function Initialize-Design {
     $Window.FindName('CloseWindowButton').Add_Click({$Window.Close()})
     $Window.FindName('PictureSampleButton').Add_Click({$Window.FindName('SettingsOverlay').Visibility='Collapsed'; Open-DesignInput 'picture_only'})
     $Window.FindName('HomePictureButton').Add_Click({Open-DesignInput 'picture_only'})
+    $Window.FindName('HomeSuperResolutionButton').Add_Click({Open-DesignInput 'super_resolution'})
     $Window.FindName('HomeTranslationButton').Add_Click({Open-DesignInput 'translation'})
     $Window.FindName('SetupBackButton').Add_Click({Set-UiPage 'home'})
     $Window.FindName('TaskNewButton').Add_Click({$NewTaskButton.RaiseEvent([Windows.RoutedEventArgs]::new([Windows.Controls.Button]::ClickEvent))})

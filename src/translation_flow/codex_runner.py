@@ -14,7 +14,7 @@ from .packaging import validate_completed_mkv as _validate_mkv
 from .runner import _render_subtitle_review, _review_cell, _safe_stem, _write_json, _write_review_once
 from .srt import parse_srt, subtitle_digest, validate_timeline
 from .translation.codex_provider import CodexProvider, TranslationCancelled
-from .translation.source_review import prepare_codex_source
+from .translation.text_check import KIND, prepare_text_checked_source, validate_text_check
 
 
 def _load(path: Path) -> dict[str, Any]:
@@ -35,6 +35,8 @@ def _job_identity(request: Any) -> dict[str, Any]:
     # Preserve existing large-v3 identities exactly; the candidate is explicit.
     if request.asr_a_model != "large-v3":
         identity["asr_a_model"] = request.asr_a_model
+    if request.asr_mode != "a_c":
+        identity["asr_mode"] = request.asr_mode
     return identity
 
 
@@ -87,10 +89,12 @@ def _append_mp4(runner: Any, completed: dict[str, Any]) -> None:
 
 def _review_text(japanese: Any, chinese: Any, source_report: dict[str, Any], report: dict[str, Any]) -> str:
     text = _render_subtitle_review(japanese, chinese)
-    text += "\n## Codex 与源文审查\n\n"
+    text += "\n## Codex 与文本检查\n\n"
     text += "来源：Codex 官方 CLI，本机 ChatGPT 登录；模型策略 cli-default，实际模型未由 CLI 报告。\n\n"
     text += "本表中的日文为自动审查后的独立参考，不覆盖 A、C 或融合原件。翻译自然度与疑点仍需人工查看原片。\n\n"
-    text += f"源文审查报告：{source_report.get('report_path', '')}\n\n"
+    text += f"文本检查报告：{source_report.get('report_path', '')}\n\n"
+    if source_report.get("kind") == KIND:
+        text += f"移除明显重复幻觉 {len(source_report['remove_ids'])} 条；其余对白和时间码保持原样。\n\n"
     for warning in source_report.get("warnings", []):
         text += f"- {_review_cell(str(warning))}\n"
     uncertainties = [("源文", item) for item in source_report.get("items", []) if item.get("note", "").strip()]
@@ -109,31 +113,37 @@ def validate_codex_translation(request: Any, job_root: Path, chinese: Path) -> t
     if _load(job_root / "codex-job.identity.json") != identity:
         raise ValueError("Codex 检查点的源媒体或翻译身份已改变")
     fused, asr_report = load_completed_asr(request.input_video, job_root / "asr",
-                                         a_model_id=request.asr_a_model)
+                                         a_model_id=request.asr_a_model, asr_mode=request.asr_mode)
     pointer = _load(job_root / "source-review.pointer.json")
     reviewed = Path(pointer["reviewed_srt"])
     japanese, chinese_cues = parse_srt(reviewed), parse_srt(chinese)
     source_report = _load(Path(pointer["report_path"]))
-    source_identity = source_report.get("identity", {})
-    expected_paths = {"a": job_root / "asr/A/A.ja.srt", "c": job_root / "asr/C/C.ja.srt",
-                      "fusion": fused, "asr_report": job_root / "asr/asr.report.json"}
-    digests = {name: subtitle_digest(parse_srt(path, allow_empty=name == "c")) for name, path in expected_paths.items() if name != "asr_report"}
-    if (source_report.get("status") != "complete"
-            or source_identity.get("provider_id") != "codex"
-            or source_identity.get("model") != request.provider.model
-            or source_identity.get("source_digests") != digests
-            or source_report.get("timeline_preserved_from_a") is not True
-            or Path(source_report.get("output_srt", "")).resolve() != reviewed.resolve()
-            or Path(source_report.get("report_path", "")).resolve() != Path(pointer["report_path"]).resolve()
-            or any(Path(source_report.get("input_paths", {}).get(name, "")).resolve() != path.resolve()
-                   for name, path in expected_paths.items())
-            or source_report.get("reviewed_source_sha256") != subtitle_digest(japanese)
-            or pointer.get("reviewed_sha256") != subtitle_digest(japanese)):
-        raise ValueError("Codex 源文审查与 A/C/fusion 或独立日文参考不匹配")
-    accepted = {str(item["a_index"]): item["c_index"] for item in asr_report.get("accepted_matches", [])}
-    if source_identity.get("accepted_matches") != accepted:
-        raise ValueError("Codex 源文审查的融合记录与 ASR 报告不匹配")
-    validate_timeline(parse_srt(fused), japanese)
+    if source_report.get("kind") == KIND:
+        validate_text_check(fused, reviewed, source_report, provider_id=request.provider.id,
+                            model=request.provider.model, asr_mode=request.asr_mode)
+        if pointer.get("reviewed_sha256") != subtitle_digest(japanese):
+            raise ValueError("文本检查指针与独立日文参考不匹配")
+    else:
+        source_identity = source_report.get("identity", {})
+        expected_paths = {"a": job_root / "asr/A/A.ja.srt", "c": job_root / "asr/C/C.ja.srt",
+                          "fusion": fused, "asr_report": job_root / "asr/asr.report.json"}
+        digests = {name: subtitle_digest(parse_srt(path, allow_empty=name == "c")) for name, path in expected_paths.items() if name != "asr_report"}
+        if (source_report.get("status") != "complete"
+                or source_identity.get("provider_id") != "codex"
+                or source_identity.get("model") != request.provider.model
+                or source_identity.get("source_digests") != digests
+                or source_report.get("timeline_preserved_from_a") is not True
+                or Path(source_report.get("output_srt", "")).resolve() != reviewed.resolve()
+                or Path(source_report.get("report_path", "")).resolve() != Path(pointer["report_path"]).resolve()
+                or any(Path(source_report.get("input_paths", {}).get(name, "")).resolve() != path.resolve()
+                       for name, path in expected_paths.items())
+                or source_report.get("reviewed_source_sha256") != subtitle_digest(japanese)
+                or pointer.get("reviewed_sha256") != subtitle_digest(japanese)):
+            raise ValueError("Codex 源文审查与 A/C/fusion 或独立日文参考不匹配")
+        accepted = {str(item["a_index"]): item["c_index"] for item in asr_report.get("accepted_matches", [])}
+        if source_identity.get("accepted_matches") != accepted:
+            raise ValueError("Codex 源文审查的融合记录与 ASR 报告不匹配")
+        validate_timeline(parse_srt(fused), japanese)
     validate_timeline(japanese, chinese_cues)
     report = _load(job_root / "translation.report.json")
     if (report.get("status") != "passed" or report.get("provider") != "codex"
@@ -206,26 +216,30 @@ def run_codex_translation(runner: Any) -> dict[str, Any]:
         asr_root = runner.job_root / "asr"
         if (asr_root / "asr.report.json").is_file():
             fused, asr_report = load_completed_asr(request.input_video, asr_root, AsrEvents(),
-                                                 a_model_id=request.asr_a_model)
+                                                 a_model_id=request.asr_a_model, asr_mode=request.asr_mode)
         else:
             tools = ToolPaths.from_root(runner.tool_root, runner.tool_root / "asr-lab", python=runner.python,
-                                        a_model_id=request.asr_a_model)
+                                        a_model_id=request.asr_a_model, asr_mode=request.asr_mode)
             missing = [str(path) for path in tools.required_paths() if not path.exists()]
             if missing:
                 raise FileNotFoundError("正式流程所需本地工具缺失：" + ", ".join(missing))
             runner.asr_factory(tools).run(request.input_video, asr_root, emit=AsrEvents(),
                                          cancelled=runner.cancel_requested)
             fused, asr_report = load_completed_asr(request.input_video, asr_root,
-                                                 a_model_id=request.asr_a_model)
+                                                 a_model_id=request.asr_a_model, asr_mode=request.asr_mode)
         _check_cancelled(runner)
         if runner.on_asr_ready is not None:
             runner.on_asr_ready()
         runner.events.emit("stage_started", stage="source_review", overall_percent=47)
-        prepare = runner.source_preparer or prepare_codex_source
+        prepare = runner.source_preparer or prepare_text_checked_source
         reviewed, source_report = prepare(fused, asr_report, runner.job_root / "source-review", provider,
                                           request.provider.model, runner._translation_progress)
         japanese = parse_srt(reviewed)
-        validate_timeline(parse_srt(fused), japanese)
+        if source_report.get("kind") == KIND:
+            validate_text_check(fused, reviewed, source_report, provider_id=request.provider.id,
+                                model=request.provider.model, asr_mode=request.asr_mode)
+        else:
+            validate_timeline(parse_srt(fused), japanese)
         _write_json(pointer_path, {"reviewed_srt": str(reviewed), "reviewed_sha256": subtitle_digest(japanese),
                                    "report_path": source_report["report_path"]})
         runner.events.emit("stage_completed", stage="source_review", overall_percent=48)

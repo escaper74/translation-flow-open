@@ -1,5 +1,9 @@
 ﻿# Presentation only: consume public events, never synthesize completion or task identity.
 Set-StrictMode -Version Latest
+$script:PictureWorkProgress = $null
+$script:SuperResolutionWorkProgress = $null
+$script:AsrWorkProgress = $null
+$script:SubtitleWorkProgress = $null
 
 function Set-UiPage([string]$Page) {
     $Window.FindName('HomePanel').Visibility = $(if ($Page -eq 'home') { 'Visible' } else { 'Collapsed' })
@@ -13,15 +17,36 @@ function Set-UiPage([string]$Page) {
 }
 
 function Update-ProgressPresentation {
+    $work = [pscustomobject]@{asr_a=$script:AsrWorkProgress;translation_flow=$script:SubtitleWorkProgress;
+        picture_workflow=$script:PictureWorkProgress;super_resolution=$script:SuperResolutionWorkProgress}
+    $view = Get-UiWorkPresentation $script:LastActiveStage $work
+    if ($script:IsRunning -and $null -ne $view) {
+        (Get-Control 'ProgressCaption').Text = $view.Caption
+        $ProgressText.Text = $view.Text
+        $RunStateText.Text = $view.Status + $(if ($view.Secondary) { ' · ' + $view.Secondary } else { '' })
+        $StageText.Text = $view.Text
+        if ($view.Status -eq '拼接与检查') { $StageText.Text += '；正在拼接并检查视频轨' }
+        $ProgressBar.Visibility = $(if ($view.Caption -eq '超分进度') { 'Hidden' } else { 'Visible' })
+        $ProgressBar.BeginAnimation([Windows.Controls.Primitives.RangeBase]::ValueProperty, $null)
+        $ProgressBar.Value = $view.Value
+        $ProgressBar.IsIndeterminate = $view.Indeterminate
+        return
+    }
+    $ProgressBar.IsIndeterminate = $false
     $unknownAsrProgress = $script:IsRunning -and $script:LastActiveStage -in @('asr_a','whisper_a','asr_c','whisper_c')
     (Get-Control 'ProgressCaption').Text = $(if ($unknownAsrProgress) { '阶段状态' } else { '总进度' })
     $ProgressText.Text = $(if ($unknownAsrProgress) { '识别中' } else { '{0}%' -f [Math]::Round($script:CurrentProgress) })
-    # ASR currently emits only stage boundaries. Do not present the starting
-    # stage weight as a live percentage of the audio already recognized.
+    if ($unknownAsrProgress) { $StageText.Text = "$(Get-StageLabel $script:LastActiveStage)；完成后自动更新进度。" }
+    # Old runs and the auxiliary recognizer may emit only stage boundaries.
+    # Keep their status honest when no completed-segment count is available.
     $ProgressBar.Visibility = $(if ($unknownAsrProgress) { 'Hidden' } else { 'Visible' })
 }
 
 function Reset-RunPresentation {
+    $script:PictureWorkProgress = $null
+    $script:SuperResolutionWorkProgress = $null
+    $script:AsrWorkProgress = $null
+    $script:SubtitleWorkProgress = $null
     $script:CurrentProgress = 0.0
     $script:EtaObservation = $null
     $script:EtaRange = ''
@@ -49,11 +74,11 @@ function Reset-RunPresentation {
     $OpenOutputButton.Visibility = 'Collapsed'
     $OpenResultButton.Visibility = 'Collapsed'
     $RecognizeStep.Visibility = $(if ($script:CurrentWorkflowMode -eq 'srt_translation' -or $script:CurrentWorkflowMode -in @('media_repackage','picture_only')) { 'Collapsed' } else { 'Visible' })
-    $TranslateStep.Visibility = $(if ($script:CurrentWorkflowMode -in @('media_repackage','picture_only')) { 'Collapsed' } else { 'Visible' })
+    $TranslateStep.Visibility = $(if ($script:CurrentWorkflowMode -in @('media_repackage','picture_only','super_resolution')) { 'Collapsed' } else { 'Visible' })
     $ExportStep.Visibility = $(if ($script:CurrentWorkflowMode -eq 'srt_translation') { 'Collapsed' } else { 'Visible' })
     if ($script:CurrentWorkflowMode -eq 'picture_only') { $RecognizeStep.Visibility='Visible' }
-    (Get-Control 'RecognizeLabel').Text = $(if ($script:CurrentWorkflowMode -eq 'picture_only') { '去马' } else { '识别' })
-    (Get-Control 'TranslateLabel').Text = $(if ($script:CurrentWorkflowMode -eq 'translation_picture_final') { '字幕与去马' } else { '翻译' })
+    (Get-Control 'RecognizeLabel').Text = $(if ($script:CurrentWorkflowMode -eq 'super_resolution') { '超分' } elseif ($script:CurrentWorkflowMode -eq 'picture_only') { '去马' } else { '识别' })
+    (Get-Control 'TranslateLabel').Text = $(if ($script:CurrentWorkflowMode -eq 'translation_super_resolution') { '字幕与超分' } elseif ($script:CurrentWorkflowMode -eq 'translation_picture_final') { '字幕与去马' } else { '翻译' })
     Set-StageIndicators ''
     Set-UiPage 'run'
 }
@@ -61,6 +86,7 @@ function Reset-RunPresentation {
 function Set-StageIndicators([string]$Stage, [bool]$Completed = $false) {
     $index = 0
     if ($Stage -match '^(source_review|asr_review|context|translation|translate_initial|polish|kana_repair|subtitle_validation)$') { $index = 1 }
+    if ($Stage -eq 'super_resolution' -and $script:CurrentWorkflowMode -eq 'translation_super_resolution') { $index = 1 }
     if ($Stage -match '^(packaging|mkv_packaging|technical_validation|media_probe|compatibility_preflight|media_repackage|mp4_delivery|final_mux)$') { $index = 2 }
     $dots = @($RecognizeDot, $TranslateDot, $ExportDot)
     $marks = @($RecognizeMark, $TranslateMark, $ExportMark)
@@ -106,6 +132,26 @@ function Update-EtaObservation($Event) {
 function Update-LivePresentation($Event) {
     $eventName = [string](Get-JsonProperty $Event 'event' '')
     $stage = [string](Get-JsonProperty $Event 'stage' '')
+    if ($eventName -eq 'job_started') {
+        $script:PictureWorkProgress = $null; $script:SuperResolutionWorkProgress = $null
+        $script:AsrWorkProgress = $null; $script:SubtitleWorkProgress = $null
+    }
+    if ($script:CurrentWorkflowMode -in @('translation_picture_final','translation_super_resolution')) {
+        $subtitle = Get-UiSubtitleProgressState $Event
+        if ($null -ne $subtitle) { $script:SubtitleWorkProgress = $subtitle }
+    }
+    if ($stage -eq 'asr_a') {
+        if (Get-UiSegmentProgressText $Event) { $script:AsrWorkProgress = $Event }
+        if ($eventName -eq 'stage_completed') { $script:AsrWorkProgress = $null }
+    }
+    if ($stage -eq 'super_resolution') {
+        if ($eventName -eq 'stage_progress') { $script:SuperResolutionWorkProgress = $Event }
+        if ($eventName -eq 'stage_completed') { $script:SuperResolutionWorkProgress = $null }
+    }
+    if ($stage -eq 'picture_workflow') {
+        if (Get-UiSegmentProgressText $Event) { $script:PictureWorkProgress = $Event }
+        if ($eventName -eq 'stage_completed') { $script:PictureWorkProgress = $null }
+    }
     if ($eventName -in @('stage_started','stage_progress','stage_completed')) {
         if ($stage) {
             if ($script:LastActiveStage -ne $stage) { $script:EtaObservation = $null; $script:EtaRange = '' }
@@ -119,6 +165,11 @@ function Update-LivePresentation($Event) {
                 $StageText.Text = "$(Get-StageLabel $stage)；完成后自动更新进度。"
             }
             if ($detail -match '(\d+)\s*/\s*(\d+)') { $StageText.Text = "已完成 $($Matches[1]) / $($Matches[2])" }
+            if ($stage -eq 'picture_workflow' -and (Get-UiSegmentProgressText $Event)) {
+                $StageText.Text = "已完成 $(Get-UiSegmentProgressText $Event)"
+                if ((Get-JsonProperty $Event 'phase' '') -eq 'assembling') { $StageText.Text += '；正在拼接并检查视频轨' }
+            }
+            if ($stage -eq 'super_resolution') { $StageText.Text = Get-SuperResolutionProgressText ([pscustomobject]@{super_resolution=$Event}) }
             if ((Get-JsonProperty $Event 'resumed' $false) -eq $true) { $StageText.Text = '正在接着上次的进度继续' }
             Update-EtaObservation $Event
         }
@@ -138,7 +189,7 @@ function Update-ClockPresentation {
     if (-not $script:IsRunning) { return }
     Update-DurationSummary
     Update-ProgressPresentation
-    $EtaText.Text = $(if ($script:EtaRange) { $script:EtaRange } elseif ($script:LastActiveStage -in @('asr_a','whisper_a','asr_c','whisper_c')) { '暂无可靠估算' } else { '正在估算' })
+    $EtaText.Text = $(if ($script:EtaRange) { $script:EtaRange } elseif ($script:LastActiveStage -in @('asr_a','whisper_a','asr_c','whisper_c','super_resolution')) { '暂无可靠估算' } else { '正在估算' })
     if ($null -ne $script:EtaObservation -and ([DateTimeOffset]::UtcNow - $script:EtaObservation.LastAt).TotalSeconds -gt 120) { $EtaText.Text = '等待新的进度' }
 }
 
@@ -161,9 +212,9 @@ function Complete-RunPresentation([bool]$Succeeded, [bool]$Cancelled) {
     $RetryRunButton.Visibility = $(if (-not $Succeeded -and [IO.File]::Exists($script:CurrentRequestPath)) { 'Visible' } else { 'Collapsed' })
     $BackgroundButton.Visibility = 'Collapsed'
     if ($Succeeded) {
-        $RunStateText.Text = $(if ($script:CurrentWorkflowMode -in @('media_repackage','picture_only','translation_picture_final')) { '视频已导出' } else { '翻译好了' })
+        $RunStateText.Text = $(if ($script:CurrentWorkflowMode -in @('media_repackage','picture_only','translation_picture_final','super_resolution','translation_super_resolution')) { '视频已导出' } else { '翻译好了' })
         $RunStateText.Foreground = Convert-ToBrush '#142333'
-        $StageText.Text = $(if ($script:CurrentWorkflowMode -eq 'srt_translation') { '打开字幕，看看翻译效果。' } else { '打开视频，看看字幕效果。' })
+        $StageText.Text = $(if ($script:CurrentWorkflowMode -eq 'super_resolution') { '打开视频，看看画面效果。' } elseif ($script:CurrentWorkflowMode -eq 'srt_translation') { '打开字幕，看看翻译效果。' } else { '打开视频，看看字幕效果。' })
         $OpenResultButton.Content = $(if ($script:CurrentWorkflowMode -eq 'srt_translation') { '打开字幕' } else { '打开视频' })
         $RecoverySummaryText.Foreground = Convert-ToBrush '#778599'
         $outputFiles = Get-JsonProperty $script:CompletedEvent 'outputs' $null
@@ -171,9 +222,13 @@ function Complete-RunPresentation([bool]$Succeeded, [bool]$Cancelled) {
             $subtitle = [string](Get-JsonProperty $outputFiles 'chinese_srt' '')
             $SubtitleResultText.Text = $(if ($subtitle) { '字幕 · ' + [IO.Path]::GetFileName($subtitle) } else { '' })
             $SubtitleResultText.ToolTip = $subtitle
-            $videoFiles = @('final_mkv','final_mp4','final_media' | ForEach-Object { $path=[string](Get-JsonProperty $outputFiles $_ ''); if ($path) { $path } })
+            $videoFiles = @('comparison','final_mkv','final_mp4','final_media' | ForEach-Object { $path=[string](Get-JsonProperty $outputFiles $_ ''); if ($path) { $path } })
             $MkvResultText.Text = ($videoFiles | ForEach-Object { '视频 · ' + [IO.Path]::GetFileName($_) }) -join "`n"
             $MkvResultText.ToolTip = $videoFiles -join "`n"
+            if (Get-JsonProperty $outputFiles 'comparison' '') {
+                $StageText.Text = '左侧原画，右侧超分；原尺寸超分短片也已保存。'
+                $OpenResultButton.Content = '打开对照'
+            }
         }
         Set-StageIndicators $script:LastActiveStage $true
     } else {

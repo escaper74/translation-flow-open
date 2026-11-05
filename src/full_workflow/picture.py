@@ -13,7 +13,7 @@ from translation_flow.runtime import tool_root, jasna_path, acceptance_report
 from translation_flow.runner import _safe_stem
 from translation_flow.subtitle_detection import sidecars
 from .contracts import FullWorkflowGates
-from .runner import _load_json, _write_json, _same_decimal, validate_picture_result
+from .runner import _load_json, _write_json, _same_decimal, validate_picture_result, picture_progress_payload
 
 
 @dataclass(frozen=True)
@@ -111,7 +111,7 @@ class PictureRunner:
                                       mirror_output=False, cancelled=self.stopped,
                                       on_progress=lambda done, total: self.events.emit(
                                           'stage_progress', stage='picture_workflow', overall_percent=round(85*done/total, 1),
-                                          detail=f'去马已完成 {done}/{total} 段。'))
+                                          **picture_progress_payload(done, total)))
         picture = validate_picture_result(picture, self.request.input_video, self.picture_config.output)
         self.events.emit('stage_completed', stage='picture_workflow', overall_percent=86, reused=bool(picture.get('reused')))
         check_cancelled(self.stopped)

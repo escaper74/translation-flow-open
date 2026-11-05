@@ -54,6 +54,33 @@ def _video_probe(path: str, *, codec: str = "h264", duration: float = 60.0) -> d
 
 
 class WorkflowTests(unittest.TestCase):
+    def test_counts_only_advance_after_verified_segments_and_precede_concat(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            config = self._config(root, scope="full")
+            config.source.write_bytes(b"neutral fixture")
+            progress = []
+            processed = []
+            records = [{"path": str(root / f"segment_{i}.mkv")} for i in range(2)]
+            def segment(*args, **kwargs):
+                self.assertEqual((len(processed), 2), progress[-1])
+                processed.append(True)
+                return {"reused": True}
+            def concat(*args, **kwargs):
+                self.assertEqual([(0, 2), (1, 2), (2, 2)], progress)
+                raise ExperimentError("synthetic concat failure")
+            with (
+                patch("jasna_picture.workflow.preflight_workflow", return_value={"source_duration_seconds": 60}),
+                patch("jasna_picture.workflow._gpu_utilization_percent", return_value=None),
+                patch("jasna_picture.workflow._prepare_segments", return_value=(records, {})),
+                patch("jasna_picture.workflow._process_segment", side_effect=segment),
+                patch("jasna_picture.workflow._concat_and_verify", side_effect=concat),
+            ):
+                with self.assertRaisesRegex(ExperimentError, "concat failure"):
+                    run_picture_workflow(config, confirm_gpu_ready=True,
+                                         on_progress=lambda done, total: progress.append((done, total)))
+            self.assertFalse(config.final_report_path.exists())
+
     def _config(
         self,
         root: Path,

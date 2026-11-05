@@ -1,0 +1,35 @@
+Optional super-resolution runtime (downloaded, not included in Git)
+
+Upscayl 2.15.0 standalone NCNN/Vulkan executable and Upscayl Lite model:
+https://github.com/upscayl/upscayl/tree/4f39acfc6f88260d105920a64deff8431d5e1544
+Executable source: https://github.com/upscayl/upscayl-ncnn
+The upstream executable is AGPL-3.0 licensed. The setup command saves the
+upstream LICENSE alongside the downloaded components. These components are
+invoked as a separate executable and are not relabeled as this project's code.
+Review the upstream distribution notices when preparing a public binary bundle.
+
+NCNN: https://github.com/Tencent/ncnn
+Real-ESRGAN: https://github.com/xinntao/Real-ESRGAN
+The compact model is used through the upstream Upscayl Lite files. This package
+does not claim it is the RRDB x2plus model or a temporally trained video model.
+
+FFmpeg is the existing project runtime. No FFmpeg binaries are redistributed here.
+
+Optional standalone model: NomosUni OTF Medium
+Model: 2xNomosUni_compact_otf_medium_fp16, by Philip Hofmann (Phhofm).
+Original release and attribution:
+https://github.com/Phhofm/models/releases/tag/2xNomosUni_compact_otf_medium
+License: Creative Commons Attribution 4.0 International (CC BY 4.0)
+https://creativecommons.org/licenses/by/4.0/
+The original FP16 .bin and .param are used without changes. This is the
+SRVGGNetCompact 2x model, not SPAN. Frames are resized and encoded after inference.
+
+Compatible executable: TNTwise/SPAN-ncnn-vulkan, release 20240831-055257
+https://github.com/TNTwise/SPAN-ncnn-vulkan/releases/tag/20240831-055257
+Source: https://github.com/TNTwise/SPAN-ncnn-vulkan
+License: AGPL-3.0; the original package LICENSE is kept beside the executable.
+The program supports the Compact graph's Clip operator missing in Upscayl 2.15.0.
+Only this executable, its runtime DLLs, license and the selected NomosUni model
+are installed. Other SPAN model weights are not installed or selected.
+setup.py records project SHA-256 pins of tested original release files; upstream
+did not publish asset digests. Models and executables remain outside Git.

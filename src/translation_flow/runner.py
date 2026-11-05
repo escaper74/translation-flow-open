@@ -17,6 +17,7 @@ from .runtime import DEFAULT_TOOL_ROOT, tool_root as resolve_tool_root
 from .srt import SubtitleCue, parse_srt, subtitle_digest, validate_timeline
 from .translation import create_deepseek_provider, run_translation
 from .translation.api_providers import create_api_provider
+from .translation.text_check import prepare_text_checked_source, validate_text_check
 
 
 _SAFE_STEM_RE = re.compile(r"[^\w.-]+", flags=re.UNICODE)
@@ -91,6 +92,7 @@ def _write_review_once(path: Path, content: str) -> None:
 def _validate_api_translation(
     request: JobRequest, asr: dict[str, Any], japanese: list[SubtitleCue],
     chinese: list[SubtitleCue], report: dict[str, Any], output: Path,
+    *, asr_cues: list[SubtitleCue] | None = None,
 ) -> None:
     """Check the new API result against public configuration, without a Key."""
     stat = request.input_video.stat()
@@ -99,7 +101,9 @@ def _validate_api_translation(
             or Path(asr.get("source", "")).resolve() != request.input_video.resolve()
             or asr.get("source_size_bytes") != stat.st_size
             or asr.get("source_mtime_ns") != stat.st_mtime_ns
-            or asr.get("fusion_cues") != len(japanese)):
+            or asr.get("asr_mode", "a_c") != request.asr_mode
+            or asr.get("a_model", "large-v3") != request.asr_a_model
+            or asr.get("fusion_cues") != len(asr_cues if asr_cues is not None else japanese)):
         raise ValueError("ASR 检查点与本次源媒体不匹配")
     if (report.get("status") != "passed"
             or report.get("profile") != request.profile_id
@@ -112,6 +116,23 @@ def _validate_api_translation(
             or report.get("translated_count") != len(chinese)
             or Path(report.get("output", "")).resolve() != output.resolve()):
         raise ValueError("已完成翻译检查点与本次供应商/端点/模型/上限或字幕不匹配")
+
+
+def load_text_reference(source: Path, job_root: Path, request: JobRequest
+                        ) -> tuple[Path, dict[str, Any]]:
+    pointer_path = job_root / "source-review.pointer.json"
+    if not pointer_path.is_file():
+        return source, {}  # Completed API jobs from before the lightweight check.
+    pointer = json.loads(pointer_path.read_text(encoding="utf-8-sig"))
+    reviewed = Path(pointer["reviewed_srt"])
+    report = json.loads(Path(pointer["report_path"]).read_text(encoding="utf-8-sig"))
+    validate_text_check(source, reviewed, report, provider_id=request.provider.id,
+                        model=request.provider.model, asr_mode=request.asr_mode,
+                        provider_identity=getattr(request.provider, "cache_identity", None))
+    if (pointer.get("reviewed_sha256") != report["reviewed_source_sha256"]
+            or Path(report["report_path"]).resolve() != Path(pointer["report_path"]).resolve()):
+        raise ValueError("文本检查指针与独立日文参考不匹配")
+    return reviewed, report
 
 
 class TranslationFlowRunner:
@@ -254,6 +275,7 @@ class TranslationFlowRunner:
             self.tool_root / "asr-lab",
             python=self.python,
             a_model_id=self.request.asr_a_model,
+            asr_mode=self.request.asr_mode,
         )
         asr_report_path = self.job_root / "asr" / "asr.report.json"
         asr_reused = bool(api_config and asr_report_path.is_file())
@@ -261,6 +283,7 @@ class TranslationFlowRunner:
             fused_srt, asr_report = load_completed_asr(
                 self.request.input_video, self.job_root / "asr", self.events,
                 a_model_id=self.request.asr_a_model,
+                asr_mode=self.request.asr_mode,
             )
         else:
             if api_config and translation_checkpoint:
@@ -276,6 +299,8 @@ class TranslationFlowRunner:
         # translation provider. Real AsrPipeline validates A and C independently;
         # this boundary independently protects fusion checkpoints and substitutes.
         fused_cues = parse_srt(fused_srt)
+        translation_source, source_report = load_text_reference(fused_srt, self.job_root, self.request)
+        japanese = parse_srt(translation_source)
         self.check_cancelled()
         if api_config and asr_report.get("fusion_cues") != len(fused_cues):
             raise ValueError("ASR fusion 数量与正式报告不匹配")
@@ -283,10 +308,11 @@ class TranslationFlowRunner:
             self.on_asr_ready()
         if translation_checkpoint:
             chinese_cues = parse_srt(chinese_srt)
-            validate_timeline(fused_cues, chinese_cues)
+            validate_timeline(japanese, chinese_cues)
             report = json.loads(translation_report.read_text(encoding="utf-8-sig"))
             if api_config:
-                _validate_api_translation(self.request, asr_report, fused_cues, chinese_cues, report, chinese_srt)
+                _validate_api_translation(self.request, asr_report, japanese, chinese_cues, report, chinese_srt,
+                                          asr_cues=fused_cues)
                 if package_checkpoint:
                     validate_completed_mkv(final_mkv, technical_report, self.request.input_video, chinese_srt)
                 if self.on_asr_ready is not None:
@@ -296,7 +322,8 @@ class TranslationFlowRunner:
                 or report.get("profile") != self.request.profile_id
                 or report.get("provider") != self.request.provider.id
                 or report.get("model") != self.request.provider.model
-                or report.get("source_sha256") != subtitle_digest(fused_cues)
+                or report.get("source_sha256") != subtitle_digest(japanese)
+                or Path(report.get("input", "")).resolve() != translation_source.resolve()
                 or Path(str(report.get("output", ""))).resolve()
                 != chinese_srt.resolve()
             ):
@@ -321,8 +348,24 @@ class TranslationFlowRunner:
             self.events.emit("stage_started", stage="preflight", overall_percent=47)
             provider.check_connection()
             self.events.emit("stage_completed", stage="preflight", overall_percent=48)
+            self.events.emit("stage_started", stage="source_review", overall_percent=48)
+            prepare = self.source_preparer or prepare_text_checked_source
+            translation_source, source_report = prepare(
+                fused_srt, asr_report, self.job_root / "source-review", provider,
+                self.request.provider.model, self._translation_progress,
+            )
+            japanese = parse_srt(translation_source)
+            validate_text_check(fused_srt, translation_source, source_report,
+                                provider_id=self.request.provider.id, model=self.request.provider.model,
+                                asr_mode=self.request.asr_mode,
+                                provider_identity=getattr(self.request.provider, "cache_identity", None))
+            _write_json(self.job_root / "source-review.pointer.json", {
+                "reviewed_srt": str(translation_source), "reviewed_sha256": subtitle_digest(japanese),
+                "report_path": source_report["report_path"],
+            })
+            self.events.emit("stage_completed", stage="source_review", overall_percent=48)
             report = self.translator(
-                fused_srt,
+                translation_source,
                 chinese_srt,
                 translation_report,
                 self.job_root / "translations",
@@ -334,14 +377,17 @@ class TranslationFlowRunner:
             )
         chinese_cues = parse_srt(chinese_srt)
         self.check_cancelled()
-        validate_timeline(fused_cues, chinese_cues)
+        validate_timeline(japanese, chinese_cues)
         if api_config:
-            _validate_api_translation(self.request, asr_report, fused_cues, chinese_cues, report, chinese_srt)
+            _validate_api_translation(self.request, asr_report, japanese, chinese_cues, report, chinese_srt,
+                                      asr_cues=fused_cues)
         _write_review_once(
             subtitle_review,
-            _render_subtitle_review(fused_cues, chinese_cues),
+            _render_subtitle_review(japanese, chinese_cues)
+            + (f"\n文本检查：移除明显重复幻觉 {len(source_report['remove_ids'])} 条；其余对白和时间码保持原样。\n"
+               f"检查记录：{source_report['report_path']}\n" if source_report else ""),
         )
-        for warning in report.get("warnings", []):
+        for warning in [*source_report.get("warnings", []), *report.get("warnings", [])]:
             self.events.emit("warning", code="TRANSLATION_WARNING", message=str(warning))
         self.events.emit("artifact_ready", kind="zh_srt", path=str(chinese_srt))
         self.events.emit(
@@ -374,6 +420,9 @@ class TranslationFlowRunner:
             "human_review_status": "pending",
             "asr": asr_report,
         }
+        if source_report:
+            completed["outputs"].update(reviewed_japanese_srt=str(translation_source),
+                                         source_review_report=source_report["report_path"])
         if api_config:
             completed["provider"] = vars(api_config)
             completed["stages"] = {

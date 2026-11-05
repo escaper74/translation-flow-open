@@ -2,21 +2,16 @@
 
 > 本文介绍安装、运行模式、检查点恢复和结果验证。模块结构与技术路线见 [项目说明](PROJECT_BRIEF.md)。
 
-### 兼容性与恢复维护版（2026-11-04）
+### 本版功能与验证范围（2026-11-05）
 
-本版合入已测试的输入兼容、任务恢复与字幕识别修复：
+- 默认仍为 Turbo + 辅助识别（A+C）。关闭「辅助识别」后只运行 A，不安装 C 也能使用；仅 A 模式跳过依赖 C 的开头校时。
+- 识别之后只检查重复候选，删除明确幻觉，不确定的保留。检查格式或临时服务错误在有限重试后保留原文继续；取消、登录失效和额度不足仍明确停止。不会逐句多轮审查。
+- 识别段数、画面段数和超分帧数分别显示；段数到齐后显示拼接与检查，再依据正式结果完成。翻译下一批保留累计完成数。
+- 超分默认关闭，默认模型 Lite；NomosUni OTF Medium 只用于单独超分。保留 15 秒对照和原声音/已有字幕，不引入 PyTorch。
+- A 音频先解码再按源时间截取，保留音轨延迟；新分段缓存为 `A_source_time_chunks`，不复用旧 `A_chunks` 的错误起点。已完成的整项 ASR/字幕不自动重做。
+- 保留已有输入兼容与恢复修复，并修正美颜共享工具目录及 10-bit HEVC 播放兼容。
 
-- WMV8 等无法硬解码的输入，可使用 Jasna 内置 FFmpeg 软件解码后上传 CUDA，继续 GPU 画面处理；报告记录实际解码方式。
-- 普通画面任务按当前工具、引擎和媒体检查运行，不再要求历史 30 分钟验收报告；长时工程回归仍可显式执行。
-- 恢复时使用当前工具路径并复用已完成的识别、准备阶段和画面检查点；修正默认输出位置与缓存路径检查。
-- C 识别关闭跨窗口文字沿用，过滤缺少 A 同时间支持的大量重复幻觉，保留原始识别记录及完整 A 时间轴；已完成的 C 解码可直接重新过滤。
-- 修正 Codex 信息事件误判、队列编辑草稿被刷新覆盖，以及任务保存位置和失败原因显示。
-
-已完成相关离线回归、三段短片及两部整片的技术验证；用户另已测试新增输入兼容修复。自动报告的技术通过与每部成片的观看验收分别记录。
-
-任务进度显示改进、A+C 可选开关留待后续版本；本版不新增这两项功能，也不改变默认识别路线。
-
-升级时保留原输出目录、请求、缓存和检查点，重新打开桌面入口加载界面更新；不要通过重新投片代替恢复。正在运行的任务按原进程继续，不为升级中断。
+实际验证：本机单独 NomosUni 超分、Codex + A-only、DeepSeek API + A+C 均已技术完成，使用者观看后同意整合；少量重复短句仍可能残留。公开版新目录内 Lite/NomosUni 安装下载及固定哈希校验通过，28 个 C 依赖联网解析通过；大模型下载入口已抽样读取，未重新下载整个模型。本次没有重跑离线套件或新增真实媒体任务，也未证明其他机器的 GPU/驱动可用。
 
 ## 0. 阅读导航
 
@@ -30,7 +25,7 @@
 | 命令行入口与处理范围 | 本文第 7 节 |
 | 并行、模型选择和开头校时如何运行 | 本文第 8–9 节 |
 
-桌面首页为“去马、翻译、美颜”。去马、翻译先选择视频，再在准备页独立或双选；已有字幕视频换格式位于右上角设置。只选去马时不检查翻译服务；SRT 仍可通过翻译入口导入，不能用于去马。一个功能也没选时提示至少选择一项。
+桌面首页为“去马、翻译、单独超分、美颜”。去马、翻译先选择视频，再在准备页独立或双选；已有字幕视频换格式位于右上角设置。只选去马时不检查翻译服务；SRT 仍可通过翻译入口导入，不能用于去马。一个功能也没选时提示至少选择一项。
 
 ## 新机器安装
 
@@ -46,23 +41,44 @@
 
 | 用途 | 固定组件/来源 | 在工具根下的实际路径 |
 |---|---|---|
-| 视频探测、封装 | [Gyan FFmpeg 8.1.1 essentials](https://www.gyan.dev/ffmpeg/builds/) 的完整 Windows x64 包 | `ffmpeg/ffmpeg-8.1.1-essentials_build/bin/ffmpeg.exe` 和 `ffprobe.exe` |
+| 视频探测、封装 | [Gyan FFmpeg 8.1.1 essentials ZIP](https://github.com/GyanD/codexffmpeg/releases/download/8.1.1/ffmpeg-8.1.1-essentials_build.zip) 的完整 Windows x64 包 | `ffmpeg/ffmpeg-8.1.1-essentials_build/bin/ffmpeg.exe` 和 `ffprobe.exe` |
 | A 识别 | [whisper.cpp v1.9.0](https://github.com/ggml-org/whisper.cpp/releases/tag/v1.9.0) CUDA 12.4 x64 包，保留依赖 DLL | `whisper-cublas-12.4.0-bin-x64/Release/whisper-cli.exe` |
 | A 默认模型 | [whisper.cpp GGML 模型库](https://huggingface.co/ggerganov/whisper.cpp/tree/main)，非量化 `ggml-large-v3-turbo.bin`，约 1.51 GiB | `LLPlayer-v0.3.0/whispermodels/ggml-large-v3-turbo.bin` |
 | A 可选模型/旧任务 | 同一模型库，非量化 `ggml-large-v3.bin`，约 2.88 GiB | `LLPlayer-v0.3.0/whispermodels/ggml-large-v3.bin` |
 | 开头局部校时（可选） | 同版 Whisper 的 `whisper-vad-speech-segments.exe` 与 [Silero v6.2.0 GGML](https://huggingface.co/ggml-org/whisper-vad/tree/main) | 前者放 `whisper-cublas-12.4.0-bin-x64/Release/`，后者放 `whisper-vad/ggml-silero-v6.2.0.bin` |
-| C 识别环境 | faster-whisper 1.2.1 / CTranslate2 4.6.0，完整锁定列表见 `scripts/asr_fusion/requirements-faster-whisper.lock.txt` | `asr-lab/venvs/faster-whisper-1.2.1/Scripts/python.exe` |
-| C 模型 | [Systran large-v3 固定快照](https://huggingface.co/Systran/faster-whisper-large-v3/tree/edaa852ec7e145841d8ffdb056a99866b5f0a478)，由下面脚本下载并核对 | `asr-lab/models/faster-whisper-large-v3/`，含 model.bin、tokenizer/config/vocabulary 等文件 |
+| C 识别环境（辅助识别开启时需要） | faster-whisper 1.2.1 / CTranslate2 4.6.0，完整锁定列表见 `scripts/asr_fusion/requirements-faster-whisper.lock.txt` | `asr-lab/venvs/faster-whisper-1.2.1/Scripts/python.exe` |
+| C 模型（辅助识别开启时需要） | [Systran large-v3 固定快照](https://huggingface.co/Systran/faster-whisper-large-v3/tree/edaa852ec7e145841d8ffdb056a99866b5f0a478)，由下面脚本下载并核对 | `asr-lab/models/faster-whisper-large-v3/`，含 model.bin、tokenizer/config/vocabulary 等文件 |
 | 画面处理 | [Jasna v0.10.0 Windows NVIDIA 包](https://github.com/Kruk2/jasna/releases/tag/v0.10.0)，完整解压到英文路径 | 默认 `jasna/jasna.exe`，或配置 `JasnaPath` |
+| 轻量超分（可选） | 固定 Upscayl Lite 与 NomosUni OTF Medium；下方安装入口 | `super-resolution/`，NomosUni 位于其 `nomosuni-otf-medium/` 子目录 |
 | 美颜播放（可选） | MediaPipe Tasks Vision 0.10.21 + FaceLandmarker float16 v1；下方安装命令 | `beauty-player/` |
 
 `LLPlayer-v0.3.0` 只是沿用的模型目录名，不要求下载 LLPlayer。也不要因下载站出现新版本就替换上述版本或改名假装一致。下载后核对上游校验值并保留对应许可；上游分发内容和链接可能变化，下载时仍需核对。第三方分发限制见 `THIRD_PARTY_NOTICES.txt`。
 
-NVIDIA 驱动须满足所选 CUDA 和 Jasna 包要求；本项目未提供 AMD/CPU 的画面处理配置。模型文件、CUDA wheel 和视频检查点合计需要数 GiB 到数十 GiB，具体取决于输入。A 的临时路径必须是纯 ASCII；若自动选择的位置不可写，可仅在启动进程中设置 `TRANSLATION_FLOW_ASCII_WORK_ROOT` 到同盘可写英文目录。同盘可用硬链接避免反复复制模型。
+NVIDIA 驱动须满足所选 CUDA 和 Jasna 包要求。超分推理使用 Vulkan，视频由 FFmpeg/libx264 编码，不依赖 CUDA；当前只验证了 NVIDIA，未验证 AMD/Intel 或纯 CPU 的完整交付。模型文件、CUDA wheel 和视频检查点合计需要数 GiB 到数十 GiB，具体取决于输入。A 的临时路径必须是纯 ASCII；若自动选择的位置不可写，可仅在启动进程中设置 `TRANSLATION_FLOW_ASCII_WORK_ROOT` 到同盘可写英文目录。同盘可用硬链接避免反复复制模型。
+
+### 安装超分组件
+
+单独超分只需 Python、FFmpeg 和这些组件。双击根目录 `安装轻量超分.cmd`，或从根目录运行：
+
+```powershell
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\desktop\Install-SuperResolution.ps1
+# 只安装所需模型；默认 all 准备两款，不改变界面的 Lite 默认值：
+powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\src\desktop\Install-SuperResolution.ps1 -Model nomosuni-otf-medium
+```
+
+脚本使用 `config/local.psd1` 的 PythonPath / ToolRoot，也可用 `-PythonPath` / `-ToolRoot` 指定；未配置时优先用项目 `.venv`。`TRANSLATION_FLOW_SR_ROOT` 可单独覆盖超分目录。安装后 Lite 约 9.36 MB，NomosUni 另约 9.70 MB；下载 NCNN 的原始 ZIP 会比最终安装内容更大。安装不运行 GPU，不修改系统环境，任务也不会自动下载。已存在且版本不符的组件会保留并提示。
+
+网络无法直连时，可从[Upscayl 固定版本](https://github.com/upscayl/upscayl/tree/4f39acfc6f88260d105920a64deff8431d5e1544)手工取得 `resources/win/bin/` 中的程序与 DLL、`resources/models/upscayl-lite-4x.*` 和 LICENSE，按 `src/video_enhancement/setup.py` 的 FILES 表存放，重跑安装会核对并跳过已有文件。NomosUni 可从[模型原始发布](https://github.com/Phhofm/models/releases/tag/2xNomosUni_compact_otf_medium)和[兼容 NCNN 发布](https://github.com/TNTwise/SPAN-ncnn-vulkan/releases/tag/20240831-055257)下载，再显式复用本地文件：
+
+```powershell
+.\scripts\python.cmd -m video_enhancement.setup --model nomosuni-otf-medium --runtime-archive C:\Downloads\span-ncnn-vulkan-20240831-055257-windows.zip --model-directory C:\Downloads\NomosUni --destination C:\TranslationFlow\workflow\tools\super-resolution
+```
+
+模型目录放原版 `2xNomosUni_compact_otf_medium_fp16.bin` / `.param`。程序按项目固定摘要核对，未转换或重写权重。第三方许可分别保留，见 `src/video_enhancement/THIRD_PARTY.txt`。这里只增加超分，不提供运动插帧；当前支持 SDR，需重编码的 VFR 按平均帧率归一化。可先做 15 秒对照再决定是否跑整片，效果和速度随素材及显卡变化。
 
 ### 安装 C 和美颜组件
 
-以下命令需要联网，会下载依赖/模型；只在决定安装时执行。从源码根目录运行，`$Tools` 替换成与桌面 `ToolRoot` 相同的路径：
+C 仅在开启「辅助识别」时需要。以下命令需要联网，会下载依赖/模型；只在决定安装时执行。从源码根目录运行，`$Tools` 替换成与桌面 `ToolRoot` 相同的路径：
 
 ```powershell
 $Python = (Resolve-Path .\.venv\Scripts\python.exe).Path
@@ -70,7 +86,7 @@ $Tools = Join-Path (Get-Location) 'workflow\tools'
 powershell.exe -NoProfile -ExecutionPolicy Bypass -File .\scripts\asr_fusion\setup-dependencies.ps1 -BootstrapPython $Python -LabRoot (Join-Path $Tools 'asr-lab')
 ```
 
-脚本固定 C 模型 revision 和 7 个文件的大小/SHA256，使用仓库里的完整 pip 锁定列表，并保留安装清单；不修改系统 PATH。`-SkipModel` 只跳过模型，仍会下载/安装 CUDA 等依赖。C 环境使用 Python 3.12；锁定文件不能替代新机器上的安装验证。
+脚本固定 C 模型 revision 和 7 个文件的大小/SHA256，使用仓库里的完整 pip 锁定列表，并保留安装清单；不修改系统 PATH。`-SkipModel` 只跳过模型，仍会下载/安装 CUDA 等依赖。C 环境使用 Python 3.12；2026-11-05 已在全新 Python 3.12 环境联网完成这 28 个包的解析和下载检查；没有据此声明新 GPU 上的 C 推理通过。
 
 美颜可单独显式安装（约 22 MiB），不运行媒体或人脸推理：
 
@@ -130,7 +146,7 @@ $env:TRANSLATION_FLOW_TOOL_ROOT = $Tools
 
 根目录 `启动翻译流.cmd` 是唯一用户入口；`scripts/预览新版界面.cmd` 只转发到同一入口。其他命令行入口也集中在 `scripts/`。
 
-1. 点首页去马或翻译的“选择视频”，可多选；翻译入口兼容 SRT。美颜卡直接打开播放窗。
+1. 点首页去马、翻译或单独超分的“选择视频”，可多选；翻译入口兼容 SRT。美颜卡直接打开播放窗。
 2. 独立勾选所需功能，选择保存位置与 MKV/MP4。
 3. 点“开始处理”。需要字幕外发时沿用本次授权与所选服务检查；仅去马只检查本地去马与封装工具。
 4. 自动运行，完成后点“打开结果”。中途停止会保留已完成检查点，从“任务”页按原请求继续。
@@ -146,10 +162,12 @@ $env:TRANSLATION_FLOW_TOOL_ROOT = $Tools
 
 | 选择 | 正式执行路径 | 用户成品 |
 |---|---|---|
-| 仅精修字幕，视频输入 | `translation_flow.cli`：本地 A/C/fusion → 所选服务翻译润色 | 中文字幕、原画/原声音 MKV 或 MP4 |
+| 仅精修字幕，视频输入 | `translation_flow.cli`：A 或 A+C/fusion → 轻量重复清理 → 所选服务翻译润色 | 中文字幕、原画/原声音 MKV 或 MP4 |
 | 仅精修字幕，SRT 输入 | `translation_flow.srt_desktop` | 中文字幕及检查报告 |
 | 仅去马，视频输入 | `full_workflow.picture_cli` → Jasna → final_mux | 去马后 MKV/MP4，保留原声音及已有字幕 |
-| 双选，视频输入 | `full_workflow.cli`：A/C/fusion 后字幕与去马并行 → final_mux | 去马后视频、原声音、精修中文字幕 |
+| 双选，视频输入 | `full_workflow.cli`：所选识别完成后字幕与去马并行 → final_mux | 去马后视频、原声音、精修中文字幕 |
+| 单独超分 | `video_enhancement.cli`：Lite 或 NomosUni → final_mux | 超分 MKV/MP4，保留原声音与已有字幕 |
+| 翻译＋超分 | `full_workflow.cli`：识别完成后翻译与 Lite 并行 → final_mux | 超分视频、原声音、中文字幕 |
 
 字幕与双选可沿用七种已有供应商；双选不自动切换 Codex/模型。MKV 是字幕主线的正式检查点；选择 MP4 时自动追加 MP4，已完成 MKV 保留。仅去马不构造 provider 或字幕授权，也不要求输入 Key。MP4 不支持源片图形软字幕时提示改用 MKV；不能丢轨冒充成功。仅去马按当前段完成后停止，封装开始后完成验证和发布；双选用户停止同时通知两支，普通单支故障仍让另一支保留成果。
 

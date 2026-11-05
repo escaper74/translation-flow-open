@@ -20,6 +20,58 @@ function ConvertTo-UiEventTime($Event) {
     catch { return $null }
 }
 
+function Get-UiSegmentProgressText($Progress) {
+    if ((Get-UiObjectProperty $Progress 'unit' '') -ne 'segments') { return '' }
+    $done = Get-UiObjectProperty $Progress 'completed_units' $null
+    $total = Get-UiObjectProperty $Progress 'total_units' $null
+    if ($null -eq $done -or $null -eq $total -or $total -le 0 -or $done -lt 0 -or $done -gt $total) { return '' }
+    return "$done / $total 段"
+}
+
+function Get-UiSubtitleProgressState($Event) {
+    $stage = [string](Get-UiObjectProperty $Event 'stage' '')
+    $eventName = [string](Get-UiObjectProperty $Event 'event' '')
+    if ($stage -notmatch '^(translation_flow|asr_a|asr_c|asr_fusion|source_review|context|translate_initial|translation|polish|kana_repair|subtitle_validation|packaging|mkv_packaging|technical_validation)$' -or
+        $eventName -notin @('stage_started','stage_progress','stage_completed','stage_failed')) { return $null }
+    $phase = 'running'
+    if ($stage -eq 'translation_flow' -and $eventName -eq 'stage_completed') { $phase = 'completed' }
+    elseif ($eventName -eq 'stage_failed') { $phase = 'failed' }
+    return [pscustomobject]@{stage=$stage;phase=$phase}
+}
+
+function Get-UiWorkPresentation([string]$Stage, $Work) {
+    # Status and counter always describe the same work. The parallel subtitle
+    # status is separate and survives subsequent picture events.
+    $asr = Get-UiObjectProperty $Work 'asr_a' $null
+    $segments = Get-UiSegmentProgressText $asr
+    if ($Stage -in @('asr_a','whisper_a') -and $segments -and (Get-UiObjectProperty $asr 'phase' '') -ne 'completed') {
+        $phase = Get-UiObjectProperty $asr 'phase' ''
+        $status = switch ($phase) { 'preparing' {'准备识别'} 'extracting' {'提取音频'} 'assembling' {'整理字幕'} default {'识别字幕'} }
+        return [pscustomobject]@{Status=$status;Caption='字幕识别';Text="已识别 $segments";
+            Value=(100 * $asr.completed_units / $asr.total_units);Indeterminate=($phase -eq 'assembling');Secondary=''}
+    }
+    $subtitle = Get-UiObjectProperty $Work 'translation_flow' $null
+    $secondary = ''
+    if ($null -ne $subtitle) {
+        $secondary = switch (Get-UiObjectProperty $subtitle 'phase' '') {
+            'completed' {'字幕已完成'} 'failed' {'字幕处理失败'}
+            default { Get-StageLabel ([string](Get-UiObjectProperty $subtitle 'stage' 'translation_flow')) }
+        }
+    }
+    $sr = Get-SuperResolutionProgressText $Work
+    if ($sr) { return [pscustomobject]@{Status='画面超分';Caption='超分进度';Text=$sr;Value=0;Indeterminate=$true;Secondary=$secondary} }
+    $picture = Get-UiObjectProperty $Work 'picture_workflow' $null
+    $segments = Get-UiSegmentProgressText $picture
+    if ($segments -and (Get-UiObjectProperty $picture 'phase' '') -ne 'completed') {
+        $assembling = (Get-UiObjectProperty $picture 'phase' '') -eq 'assembling'
+        $status = $(if ($assembling) { '拼接与检查' } else { '处理画面' })
+        $text = "画面 $segments" + $(if ($assembling) { ' · 拼接中' } else { '' })
+        return [pscustomobject]@{Status=$status;Caption='画面进度';Text=$text;
+            Value=(100 * $picture.completed_units / $picture.total_units);Indeterminate=$assembling;Secondary=$secondary}
+    }
+    return $null
+}
+
 function Format-UiDuration([double]$Seconds) {
     if ([double]::IsNaN($Seconds) -or [double]::IsInfinity($Seconds) -or $Seconds -lt 0) {
         return "未知"

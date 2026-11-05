@@ -448,6 +448,94 @@ $script:TestResult=@{status='passed';range=$range}
 ''')
             self.assertTrue(value["range"])
 
+    def test_asr_counts_and_friendly_labels_survive_reconnection(self):
+        with tempfile.TemporaryDirectory() as raw:
+            self.run_ui(Path(raw), r'''
+function Set-DesignThumbnail($Image, $Path) {}
+$count=[pscustomobject]@{completed_units=3;total_units=9;unit='segments';phase='recognizing'}
+$row=[pscustomobject]@{id='asr-fixture';job_id='asr-job';source=(Join-Path $ProjectRoot 'neutral.mp4');request_path=(Join-Path $ProjectRoot '.translation-flow/asr-job/request.json');mode='translation';provider='codex';status='running';stage='asr_a';progress=10;started_at=1;work_progress=[pscustomobject]@{asr_a=$count}}
+$reply=[pscustomobject]@{Queue=[pscustomobject]@{project_root=$ProjectRoot;paused=$false;items=@($row)};Watched=$row;Events=@()}
+$script:CurrentQueueId='';$script:QueueDraftActive=$false
+Set-UiPage 'run'
+Apply-QueueSnapshot $reply
+if ($ProgressText.Text -ne '已识别 3 / 9 段' -or $RunStateText.Text -ne '识别字幕') { throw 'ASR snapshot did not reach details' }
+if ((Get-Control 'ProgressCaption').Text -ne '字幕识别' -or $ProgressBar.IsIndeterminate -or [Math]::Abs($ProgressBar.Value - 100/3) -gt 0.1) { throw 'ASR count does not drive stage progress' }
+if ($QueueGrid.ItemsSource[0].ProgressLabel -ne '已识别 3 / 9 段') { throw 'ASR queue lost counter' }
+$card=$Window.FindName('ActiveTasksHost').Children[0]
+if ($card.FindName('Status').Text -ne '识别字幕' -or $card.FindName('Percent').Text -ne '已识别 3 / 9 段' -or $card.FindName('Progress').IsIndeterminate) { throw 'ASR task card lost counter' }
+if ($UseCCheckBox.Content -ne '辅助识别' -or -not $UseCCheckBox.IsChecked) { throw 'friendly label changed default' }
+foreach ($stage in @('asr_a','asr_c','asr_fusion','translation_flow','parallel_branches','final_mux')) {
+    if ((Get-StageLabel $stage) -match 'Whisper|主线|薄汇合|分支') { throw 'internal terminology leaked to stage label' }
+}
+$count.completed_units=9;$count.phase='assembling'
+Apply-QueueSnapshot $reply
+if ($RunStateText.Text -ne '整理字幕' -or -not $ProgressBar.IsIndeterminate -or $null -ne $script:CompletedEvent) { throw 'finished segments confused with finished task' }
+$count.phase='completed';$row.stage='asr_c'
+Apply-QueueSnapshot $reply
+if ($RunStateText.Text -ne '辅助识别' -or $ProgressText.Text -ne '识别中') { throw 'auxiliary ASR inherited primary count' }
+Reset-RunPresentation
+if ($null -ne $script:AsrWorkProgress) { throw 'new run inherited ASR count' }
+$script:TestResult=@{status='passed'}
+''')
+
+    def test_picture_counts_remain_visible_during_parallel_translation(self):
+        with tempfile.TemporaryDirectory() as raw:
+            self.run_ui(Path(raw), r'''
+$script:CurrentWorkflowMode='translation_picture_final'
+$script:CurrentJobId='segment-fixture'
+$script:LastSeq=0
+$script:IsRunning=$true
+Reset-RunSummary
+Reset-RunPresentation
+function Send-SegmentEvent($Name, $Stage, $Done, $Phase) {
+    $event=[pscustomobject]@{schema_version=1;job_id=$script:CurrentJobId;seq=($script:LastSeq+1);event=$Name;stage=$Stage;timestamp_utc=[DateTimeOffset]::UtcNow.ToString('o')}
+    if ($null -ne $Done) { $event | Add-Member -NotePropertyMembers @{completed_units=$Done;total_units=4;unit='segments';phase=$Phase} }
+    Handle-BackendEvent $event
+}
+Send-SegmentEvent 'job_started' '' $null ''
+Send-SegmentEvent 'stage_progress' 'picture_workflow' 1 'segments'
+if ($ProgressText.Text -ne '画面 1 / 4 段' -or $StageText.Text -ne '画面 1 / 4 段' -or $RunStateText.Text -ne '处理画面') { throw 'structured count missing' }
+Send-SegmentEvent 'stage_started' 'polish' $null ''
+Set-ProgressValue 60
+if ($ProgressText.Text -ne '画面 1 / 4 段' -or (Get-Control 'ProgressCaption').Text -ne '画面进度' -or $RunStateText.Text -ne '处理画面 · 润色字幕') { throw 'parallel status and picture progress disagree' }
+Send-SegmentEvent 'stage_completed' 'translation_flow' $null ''
+if ($RunStateText.Text -ne '处理画面 · 字幕已完成') { throw 'subtitle completion is still labelled as translating' }
+Send-SegmentEvent 'stage_progress' 'picture_workflow' 4 'assembling'
+if ($StageText.Text -notmatch '正在拼接' -or $null -ne $script:CompletedEvent) { throw 'all segments confused with job completion' }
+if ($RunStateText.Text -ne '拼接与检查 · 字幕已完成') { throw 'assembly phase or subtitle completion is hidden' }
+if ($script:EtaRange) { throw 'segment counts invented an ETA' }
+Send-SegmentEvent 'stage_completed' 'picture_workflow' $null ''
+Send-SegmentEvent 'stage_started' 'final_mux' $null ''
+Set-ProgressValue 93
+if ($ProgressText.Text -ne '93%') { throw 'picture counts leaked into final mux' }
+Reset-RunPresentation
+if ($null -ne $script:PictureWorkProgress) { throw 'new run inherited counts' }
+# Reconnecting can receive persisted counts without any new event lines.
+function Set-DesignThumbnail($Image, $Path) {}
+$count=[pscustomobject]@{completed_units=124;total_units=124;unit='segments';phase='assembling'}
+$row=[pscustomobject]@{id='snapshot-fixture';job_id='snapshot-job';source=(Join-Path $ProjectRoot 'neutral.mp4');request_path=(Join-Path $ProjectRoot 'full_workflow/job/request.json');mode='translation_picture_final';provider='codex';status='running';stage='polish';progress=61;started_at=1;work_progress=[pscustomobject]@{picture_workflow=$count;translation_flow=[pscustomobject]@{stage='translation_flow';phase='completed'}}}
+$reply=[pscustomobject]@{Queue=[pscustomobject]@{project_root=$ProjectRoot;paused=$false;items=@($row)};Watched=$row;Events=@()}
+$script:CurrentQueueId='';$script:QueueDraftActive=$false
+Set-UiPage 'run'
+Apply-QueueSnapshot $reply
+if ($ProgressText.Text -ne '画面 124 / 124 段 · 拼接中' -or $QueueGrid.ItemsSource[0].ProgressLabel -ne '画面 124 / 124 段 · 拼接中' -or $RunStateText.Text -ne '拼接与检查 · 字幕已完成') { throw 'reconnect lost persisted counts or subtitle state' }
+$card=$Window.FindName('ActiveTasksHost').Children[0]
+$card.Measure([Windows.Size]::new(800,[double]::PositiveInfinity))
+$card.Arrange([Windows.Rect]::new(0,0,800,$card.DesiredSize.Height))
+if ($card.FindName('Percent').Text -ne '画面 124 / 124 段 · 拼接中' -or -not $card.FindName('Progress').IsIndeterminate) { throw 'task card claims finished' }
+if ($card.FindName('Status').Text -ne '拼接与检查 · 字幕已完成') { throw 'card status does not match counter' }
+$progressRow=$card.FindName('ProgressRow')
+if ($progressRow.ColumnDefinitions[1].ActualWidth + 1 -lt $card.FindName('Percent').DesiredSize.Width) { throw "segment label is clipped: column=$($progressRow.ColumnDefinitions[1].ActualWidth), text=$($card.FindName('Percent').DesiredSize.Width)" }
+$count.phase='completed';$row.stage='final_mux';$row.progress=93
+Apply-QueueSnapshot $reply
+if ($ProgressText.Text -ne '93%' -or $QueueGrid.ItemsSource[0].ProgressLabel -ne '93%') { throw 'finished picture obscures remaining workflow' }
+$row.PSObject.Properties.Remove('work_progress')
+Send-SegmentEvent 'stage_progress' 'picture_workflow' 1 'segments'
+Apply-QueueSnapshot $reply
+if ($ProgressText.Text -ne '画面 1 / 4 段') { throw 'older worker snapshot erased live event counts' }
+$script:TestResult=@{status='passed'}
+''')
+
     def test_asr_stage_and_elapsed_stay_visible_without_progress_events(self):
         with tempfile.TemporaryDirectory() as raw:
             self.run_ui(Path(raw), r'''
@@ -467,10 +555,10 @@ Send-TestEvent 'stage_completed' 'preflight' 0.2 0.6
 Send-TestEvent 'stage_started' 'media_input' 0.2 0.6
 Send-TestEvent 'stage_completed' 'media_input' 0.6 1.2
 Send-TestEvent 'stage_started' 'asr_a' 0.6 1.8
-if ($RunStateText.Text -notmatch 'Whisper A' -or $StageText.Text -notmatch 'Whisper A') { throw 'actual ASR stage hidden' }
+if ($RunStateText.Text -ne '识别字幕' -or $StageText.Text -notmatch '识别字幕') { throw 'actual ASR stage hidden' }
 if ($ProgressText.Text -ne '识别中' -or [string]$ProgressBar.Visibility -ne 'Hidden') { throw 'stage weight presented as live recognition percent' }
 if ($EtaText.Text -ne '暂无可靠估算') { throw 'ASR claims an estimate is being calculated' }
-if ($ElapsedText.Text -notmatch '^06:3' -or $DurationSummaryText.Text -notmatch '^总耗时：6 分' -or $DurationSummaryText.Text -notmatch '当前：.*Whisper A') { throw ('elapsed mismatch: '+$DurationSummaryText.Text) }
+if ($ElapsedText.Text -notmatch '^06:3' -or $DurationSummaryText.Text -notmatch '^总耗时：6 分' -or $DurationSummaryText.Text -notmatch '当前：.*识别字幕') { throw ('elapsed mismatch: '+$DurationSummaryText.Text) }
 # No new event arrives; the clock alone must refresh the details.
 $script:JobStartedAt=$script:JobStartedAt.AddSeconds(-60)
 $script:StageStartedAt['asr_a']=$script:StageStartedAt['asr_a'].AddSeconds(-60)
@@ -478,7 +566,7 @@ Update-ClockPresentation
 if ($ElapsedText.Text -notmatch '^07:3' -or $DurationSummaryText.Text -notmatch '^总耗时：7 分' -or $DurationSummaryText.Text -notmatch '已用 7 分') { throw 'details froze at last event' }
 Send-TestEvent 'stage_completed' 'asr_a' 390 26
 Send-TestEvent 'stage_started' 'asr_c' 390 27
-if ($StageText.Text -notmatch 'Whisper C' -or $ProgressText.Text -ne '识别中') { throw 'C stage kept A presentation' }
+if ($StageText.Text -notmatch '辅助识别' -or $ProgressText.Text -ne '识别中') { throw 'C stage kept A presentation' }
 Send-TestEvent 'stage_completed' 'asr_c' 391 45
 Send-TestEvent 'stage_started' 'translate_initial' 391 46
 if ($ProgressText.Text -ne '46%' -or [string]$ProgressBar.Visibility -ne 'Visible' -or $StageText.Text -match 'Whisper') { throw 'next stage retained ASR presentation' }

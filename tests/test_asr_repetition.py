@@ -24,6 +24,28 @@ CUE = "1\n00:00:00,000 --> 00:00:01,000\nA dialogue\n"
 
 class CRepetitionTests(unittest.TestCase):
 
+    def test_repetition_cutoffs_and_normalization_keep_the_filter_narrow(self):
+        # The final argument is expected removals, not an ASR accuracy score.
+        for repeats, total, supported, phrase, removed in (
+            (49, 100, 0, "Repeated fixture", 0),
+            (50, 277, 0, "Repeated fixture", 50),
+            (50, 278, 0, "Repeated fixture", 0),
+            (50, 100, 10, "Repeated fixture", 50),
+            (50, 100, 11, "Repeated fixture", 0),
+            (60, 100, 0, "はいはい", 0),
+        ):
+            with self.subTest(repeats=repeats, total=total, supported=supported, phrase=phrase):
+                c = [SubtitleCue(i, i*1000, i*1000+900,
+                     phrase + ("！" if i % 2 else "?") if i <= repeats else f"Other C line {i}")
+                     for i in range(1, total+1)]
+                a = [SubtitleCue(i, i*1000, i*1000+900,
+                     phrase if i <= supported else f"A dialogue {i}") for i in range(1, total+1)]
+                kept, report = filter_repeated_c(a, c, c)
+                self.assertEqual(removed, report["removed_cues"])
+                fused, _ = conservative_fuse(a, kept)
+                self.assertEqual([(x.start_ms,x.end_ms) for x in a],
+                                 [(x.start_ms,x.end_ms) for x in fused])
+
     def test_repeated_model_phrase_removes_fragmented_candidates_but_preserves_a(self):
         a = [SubtitleCue(i, i*1000, i*1000+900, f"Actual dialogue {i}") for i in range(1,61)]
         model = [SubtitleCue(i, i*1000, i*1000+900, "Repeated hallucination?") for i in range(1,61)]
@@ -99,7 +121,7 @@ class CRepetitionTests(unittest.TestCase):
             saved = Path(report["preserved_c_attempt"])
             self.assertEqual(original,{p.name:p.read_bytes() for p in saved.iterdir()})
 
-    def test_quality_gate_still_rejects_repetition_and_summary_omits_text(self):
+    def test_standalone_repetition_diagnostic_omits_text_from_summary(self):
         with tempfile.TemporaryDirectory() as raw:
             root = Path(raw)
             repeated = "PRIVATE_FIXTURE_REPEATED_PHRASE"
@@ -183,14 +205,14 @@ class CRepetitionTests(unittest.TestCase):
                     Path(args[args.index("--output") + 1]).write_bytes(Path(args[args.index("--input") + 1]).read_bytes())
                 elif len(args) > 1 and args[1] in (str(tools.validate_quality), str(tools.validate_structure)):
                     report = Path(args[args.index("--report") + 1])
-                    failed = report.parent.name == "C" and args[1] == str(tools.validate_quality) and attempts == 1
-                    report.write_text(json.dumps({"failures": ["fixture repetition"] if failed else []}), encoding="utf-8")
+                    failed = report.parent.name == "C" and args[1] == str(tools.validate_structure) and attempts == 1
+                    report.write_text(json.dumps({"failures": ["fixture invalid interval"] if failed else []}), encoding="utf-8")
                     if failed:
                         return _completed(args, returncode=1)
                 return _completed(args)
             pipeline = AsrPipeline(tools, process_runner=runner)
             job = root / "job"
-            with self.assertRaisesRegex(RuntimeError, "C quality gate"):
+            with self.assertRaisesRegex(RuntimeError, "C structure gate"):
                 pipeline.run(source, job)
             original = {p.name: p.read_bytes() for p in (job / "C").iterdir()}
             occupied = job / "C.interrupted-01"

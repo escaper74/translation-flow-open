@@ -44,13 +44,22 @@ class FullWorkflowRequest:
     translation: JobRequest
     gates: FullWorkflowGates
     delivery: FullWorkflowDelivery
+    workflow_mode: str = WORKFLOW_MODE
+    super_resolution: dict | None = None
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "FullWorkflowRequest":
-        if value.get("workflow_mode") != WORKFLOW_MODE:
+        mode = value.get("workflow_mode")
+        if mode not in {WORKFLOW_MODE, "translation_super_resolution"}:
             raise ValueError(f"不支持的顶层 workflow 模式：{value.get('workflow_mode')!r}")
+        options = None
+        if mode == "translation_super_resolution":
+            from video_enhancement.jobs import sr_options
+            options = sr_options(value.get("super_resolution"))
         return cls(
             translation=JobRequest.from_mapping(value),
             gates=FullWorkflowGates.from_mapping(value.get("gates", {})),
             delivery=FullWorkflowDelivery.from_mapping(value.get("delivery")),
+            workflow_mode=mode,
+            super_resolution=options,
         )

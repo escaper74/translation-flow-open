@@ -181,7 +181,12 @@ function Apply-QueueSnapshot($Reply) {
     $labels = @{ queued='等待中'; starting='正在准备'; running='进行中'; stopping='正在停止'; paused='已暂停'; stopped='已停止'; failed='未完成'; interrupted='需要继续'; completed='已完成' }
     $priorId = $(if ($null -ne $QueueGrid.SelectedItem) { $QueueGrid.SelectedItem.id } else { '' })
     $rows = @($queue.items | ForEach-Object {
-        [pscustomobject]@{ id=$_.id; SourceName=[IO.Path]::GetFileName($_.source); StatusLabel=$(if (Test-QueueItemPaused $_) { '已暂停' } else { $labels[$_.status] }); ProgressLabel="$([Math]::Round($_.progress))%"; Item=$_ }
+        $work = Get-JsonProperty $_ 'work_progress' $null
+        $stage = [string](Get-JsonProperty $_ 'stage' '')
+        $view = Get-UiWorkPresentation $stage $work
+        $label = $(if ($stage -in @('asr_a','asr_c','whisper_a','whisper_c') -and $_.status -ne 'completed') { '识别中' } else { "$([Math]::Round($_.progress))%" })
+        if ($null -ne $view -and $_.status -ne 'completed') { $label = $view.Text }
+        [pscustomobject]@{ id=$_.id; SourceName=[IO.Path]::GetFileName($_.source); StatusLabel=$(if (Test-QueueItemPaused $_) { '已暂停' } else { $labels[$_.status] }); ProgressLabel=$label; Item=$_ }
     })
     $QueueGrid.ItemsSource = $rows
     $QueueGrid.SelectedItem = @($rows | Where-Object { $_.id -eq $priorId }) | Select-Object -First 1
@@ -231,7 +236,18 @@ function Apply-QueueSnapshot($Reply) {
         if ($null -ne $started -and $null -ne $eventTime -and $eventTime.ToUnixTimeMilliseconds() -lt ([double]$started * 1000 - 1000)) { continue }
         Handle-BackendEvent $event
     }
+    $work = Get-JsonProperty $watched 'work_progress' $null
+    if ($null -ne $work) {
+        $script:PictureWorkProgress = Get-JsonProperty $work 'picture_workflow' $null
+        $script:SuperResolutionWorkProgress = Get-JsonProperty $work 'super_resolution' $null
+        $script:AsrWorkProgress = Get-JsonProperty $work 'asr_a' $script:AsrWorkProgress
+        $script:SubtitleWorkProgress = Get-JsonProperty $work 'translation_flow' $script:SubtitleWorkProgress
+    }
+    $script:LastActiveStage = [string](Get-JsonProperty $watched 'stage' $script:LastActiveStage)
+    if ($script:IsRunning -and @($Reply.Events).Count -eq 0) { $RunStateText.Text = Get-StageLabel $script:LastActiveStage }
     Set-ProgressValue ([double]$watched.progress)
+    $srText = Get-SuperResolutionProgressText $work
+    if ($srText -and $script:IsRunning) { $StageText.Text = $srText }
     $BackgroundButton.Visibility = $(if ($script:IsRunning -or $waiting.Count) { 'Visible' } else { 'Collapsed' })
     $StopRunButton.Visibility = $(if ($script:IsRunning) { 'Visible' } else { 'Collapsed' })
     $StopRunButton.IsEnabled = $watched.status -in @('starting','running')
@@ -337,10 +353,16 @@ function Test-QueueResumeSettings {
         [IO.Path]::GetFullPath($InputVideoBox.Text) -ne $original.SourcePath -or
         [IO.Path]::GetFullPath($OutputDirectoryBox.Text) -ne $original.OutputDirectory -or
         (Get-SelectedOutputTarget) -ne $original.OutputTarget
-    if ($original.TaskMode -in @('translation','translation_picture_final')) {
+    if ($original.TaskMode -in @('translation','translation_picture_final','translation_super_resolution')) {
         $changed=$changed -or $script:CurrentWhisperAModel -ne $original.AsrAModel
+        $changed=$changed -or $script:CurrentAsrMode -ne $original.AsrMode
     }
-    if ($original.TaskMode -notin @('media_repackage','picture_only')) {
+    if ($original.TaskMode -in @('super_resolution','translation_super_resolution')) {
+        $changed=$changed -or [int]$SuperResolutionHeightBox.SelectedItem.Tag -ne $original.SuperResolutionHeight
+        $changed=$changed -or (Get-SelectedSuperResolutionModel) -ne $original.SuperResolutionModel
+        $changed=$changed -or $script:SRPreviewStart -ne $original.PreviewStart
+    }
+    if ($original.TaskMode -notin @('media_repackage','picture_only','super_resolution')) {
         $settings=Get-SelectedProviderSettings
         $changed=$changed -or $settings.Id -ne $original.ProviderId -or $settings.Host -ne $original.ProviderHost -or
             $settings.Model -ne $original.ProviderModel -or [string]$ProfileBox.SelectedItem.Tag -ne $original.ProfileId

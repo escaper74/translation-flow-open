@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import math
 import os
 import shutil
 import subprocess
@@ -58,18 +59,20 @@ def _json_write(path: Path, value: Mapping[str, Any]) -> None:
 
 
 def load_completed_asr(source: Path, job_root: Path, emit: Emit | None = None, *,
-                       a_model_id: str = "large-v3") -> tuple[Path, dict[str, Any]]:
+                       a_model_id: str = "large-v3", asr_mode: str = "a_c") -> tuple[Path, dict[str, Any]]:
     """The existing completed-ASR checks, without requiring or launching tools."""
     source, job_root = source.resolve(), job_root.resolve()
+    report = json.loads((job_root / "asr.report.json").read_text(encoding="utf-8-sig"))
+    if asr_mode not in {"a_c", "a_only"} or report.get("asr_mode", "a_c") != asr_mode:
+        raise ValueError("ASR checkpoint belongs to a different recognition mode")
     a_cues = parse_srt(job_root / "A" / "A.ja.srt")
-    c_cues = parse_srt(job_root / "C" / "C.ja.srt", allow_empty=True)
+    c_cues = parse_srt(job_root / "C" / "C.ja.srt", allow_empty=True) if asr_mode == "a_c" else []
     fusion_srt = job_root / "fusion" / "fusion.ja.srt"
     fused_cues = parse_srt(fusion_srt)
     if not a_cues or not fused_cues:
         raise ValueError("resumed ASR produced no subtitle cues")
     validate_timeline(a_cues, fused_cues)
-    report = json.loads((job_root / "asr.report.json").read_text(encoding="utf-8-sig"))
-    if not c_cues and not report.get("c_repetition_filter", {}).get("removed_cues"):
+    if asr_mode == "a_c" and not c_cues and not report.get("c_repetition_filter", {}).get("removed_cues"):
         raise ValueError("resumed ASR has an unexplained empty C checkpoint")
     stat = source.stat()
     if (not isinstance(report, dict) or report.get("status") != "complete"
@@ -85,6 +88,8 @@ def load_completed_asr(source: Path, job_root: Path, emit: Emit | None = None, *
     for stage, count, overall in (
         ("asr_a", len(a_cues), 25), ("asr_c", len(c_cues), 42), ("asr_fusion", len(fused_cues), 47),
     ):
+        if asr_mode == "a_only" and stage in {"asr_c", "asr_fusion"}:
+            continue
         _emit(emit, "stage_completed", stage=stage, cues=count, resumed=True, overall_percent=overall)
     return fusion_srt, report
 
@@ -105,7 +110,9 @@ def _ascii_a_work_dir(job_root: Path, whisper_model: Path) -> Path:
         if base is None:
             base = Path(tempfile.gettempdir()) / "escaper_translation_flow"
     identity = hashlib.sha256(str(job_root).encode("utf-8")).hexdigest()[:24]
-    work_dir = (base / identity / "A_chunks").resolve()
+    # Old input-seek WAVs lost their media origin. Keep them intact, but never
+    # reuse their transcripts as chunks extracted on the source timeline.
+    work_dir = (base / identity / "A_source_time_chunks").resolve()
     if not str(work_dir).isascii():
         raise ValueError(
             "Whisper A requires an ASCII work directory; set "
@@ -132,6 +139,7 @@ class ToolPaths:
     validate_structure: Path
     cuda_runtime_dirs: tuple[Path, ...] = ()
     a_model_id: str = "large-v3"
+    asr_mode: str = "a_c"
     vad_cli: Path | None = None
     vad_model: Path | None = None
 
@@ -143,10 +151,13 @@ class ToolPaths:
         *,
         python: str | Path | None = None,
         a_model_id: str = "large-v3",
+        asr_mode: str = "a_c",
     ) -> "ToolPaths":
-        from .contracts import SUPPORTED_ASR_A_MODELS
+        from .contracts import SUPPORTED_ASR_A_MODELS, SUPPORTED_ASR_MODES
         if a_model_id not in SUPPORTED_ASR_A_MODELS:
             raise ValueError("unsupported Whisper A model")
+        if asr_mode not in SUPPORTED_ASR_MODES:
+            raise ValueError("unsupported ASR mode")
         tool_root = Path(tool_root)
         faster_root = Path(faster_root)
         repo_root = Path(__file__).resolve().parents[2]
@@ -183,6 +194,7 @@ class ToolPaths:
             / "whispermodels"
             / f"ggml-{a_model_id}.bin",
             a_model_id=a_model_id,
+            asr_mode=asr_mode,
             vad_cli=tool_root / "whisper-cublas-12.4.0-bin-x64" / "Release" / "whisper-vad-speech-segments.exe",
             vad_model=tool_root / "whisper-vad" / "ggml-silero-v6.2.0.bin",
             faster_model=faster_root / "models" / "faster-whisper-large-v3",
@@ -208,20 +220,19 @@ class ToolPaths:
         )
 
     def required_paths(self) -> tuple[Path, ...]:
-        return (
+        paths = (
             self.python,
-            self.faster_python,
             self.ffmpeg,
             self.ffprobe,
             self.whisper,
             self.whisper_model,
-            self.faster_model,
             self.transcribe_a,
             self.clean_srt,
-            self.validate_quality,
-            self.transcribe_c,
             self.validate_structure,
         )
+        if self.asr_mode == "a_c":
+            paths += (self.faster_python, self.faster_model, self.transcribe_c)
+        return paths
 
 
 @dataclass(frozen=True)
@@ -469,11 +480,12 @@ class AsrPipeline:
         label: str,
         *,
         env: Mapping[str, str] | None = None,
+        on_poll: Callable[[], None] | None = None,
     ) -> subprocess.CompletedProcess[str]:
         check_cancelled(self.cancelled)
         if self.process_runner is subprocess.run:
             result = run_asr_process(args, cancelled=self.cancelled,
-                                     env=dict(env) if env is not None else None)
+                                     env=dict(env) if env is not None else None, on_poll=on_poll)
         else:
             result = self.process_runner(
                 args,
@@ -485,6 +497,8 @@ class AsrPipeline:
                 env=dict(env) if env is not None else None,
                 creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
             )
+            if on_poll is not None:
+                on_poll()
         check_cancelled(self.cancelled)
         if result.returncode != 0:
             detail = (result.stderr or result.stdout or "").strip()[-1000:]
@@ -559,19 +573,7 @@ class AsrPipeline:
     def _gate(
         self, srt: Path, report_prefix: Path, duration: float, *, c: bool
     ) -> list[str]:
-        quality_report = report_prefix.with_suffix(".quality.json")
         structure_report = report_prefix.with_suffix(".structure.json")
-        self._run_process(
-            [
-                str(self.tools.python),
-                str(self.tools.validate_quality),
-                "--input",
-                str(srt),
-                "--report",
-                str(quality_report),
-            ],
-            f"{report_prefix.name} quality gate",
-        )
         args = [
             str(self.tools.python),
             str(self.tools.validate_structure),
@@ -625,9 +627,9 @@ class AsrPipeline:
         c_raw, c_srt = c_dir / "C.raw.srt", c_dir / "C.ja.srt"
         fusion_srt = fusion_dir / "fusion.ja.srt"
         report_path = job_root / "asr.report.json"
-        resume_outputs = (a_srt, c_srt, fusion_srt, report_path)
+        resume_outputs = (a_srt, fusion_srt, report_path) + ((c_srt,) if self.tools.asr_mode == "a_c" else ())
         if all(path.is_file() for path in resume_outputs):
-            return load_completed_asr(source, job_root, emit, a_model_id=self.tools.a_model_id)
+            return load_completed_asr(source, job_root, emit, a_model_id=self.tools.a_model_id, asr_mode=self.tools.asr_mode)
         source_marker = job_root / "asr.input.json"
         occupied_stage_dirs = [
             str(directory)
@@ -643,6 +645,7 @@ class AsrPipeline:
                 or marker.get("source_size_bytes") != source_identity["source_size_bytes"]
                 or marker.get("source_mtime_ns") != source_identity["source_mtime_ns"]
                 or marker.get("a_model", "large-v3") != self.tools.a_model_id
+                or marker.get("asr_mode", "a_c") != self.tools.asr_mode
             ):
                 raise ValueError("partial ASR checkpoint belongs to a different source")
         elif occupied_stage_dirs:
@@ -652,14 +655,15 @@ class AsrPipeline:
             )
         else:
             first_audio = True
-            opening_enabled = True
+            opening_enabled = self.tools.asr_mode == "a_c"
             _json_write(source_marker, {**source_identity, "asr_audio_selection": "first",
                                        "a_model": self.tools.a_model_id,
-                                       "opening_timing_policy": OPENING_TIMING_POLICY})
+                                       "asr_mode": self.tools.asr_mode,
+                                       "opening_timing_policy": OPENING_TIMING_POLICY if opening_enabled else None})
         # Raw/recognized A stays available even if its opening is calibrated.
         # Markers created before this feature retain the old timeline on resume.
         a_recognized = a_dir / "A.recognized.ja.srt" if opening_enabled else a_srt
-        for directory in (a_dir, c_dir, fusion_dir):
+        for directory in ((a_dir, c_dir, fusion_dir) if self.tools.asr_mode == "a_c" else (a_dir, fusion_dir)):
             directory.mkdir(parents=True, exist_ok=True)
 
         _emit(emit, "stage_started", stage="media_input", overall_percent=1)
@@ -678,6 +682,34 @@ class AsrPipeline:
             resumed=a_work_dir.is_dir() and any(a_work_dir.glob("chunk_*.srt")),
             overall_percent=3,
         )
+        progress_path = a_dir / "A.progress.json"
+        # Clear this attempt's display snapshot, never infer progress from old SRT files.
+        _json_write(progress_path, {"completed_units": 0,
+                                   "total_units": math.ceil(duration / self.chunk_seconds),
+                                   "unit": "segments", "phase": "preparing"})
+        last_progress = None
+
+        def publish_a_progress() -> None:
+            nonlocal last_progress
+            try:
+                current = json.loads(progress_path.read_text(encoding="utf-8"))
+            except (OSError, ValueError):
+                return
+            if not isinstance(current, dict):
+                return
+            done, total = current.get("completed_units"), current.get("total_units")
+            if type(done) is not int or type(total) is not int or not 0 <= done <= total or total <= 0:
+                return
+            progress = {"completed_units": done, "total_units": total, "unit": "segments",
+                        "phase": current.get("phase", "recognizing")}
+            if progress == last_progress:
+                return
+            last_progress = progress
+            _emit(emit, "stage_progress", stage="asr_a", **progress,
+                  stage_percent=round(100 * done / total, 1),
+                  overall_percent=round(3 + 21 * done / total, 1))
+
+        publish_a_progress()
         self._run_process(
             [
                 str(self.tools.python),
@@ -707,8 +739,11 @@ class AsrPipeline:
                 str(self.chunk_seconds),
                 "--report",
                 str(a_dir / "A.transcription.json"),
+                "--progress-file",
+                str(progress_path),
             ],
             "Whisper A transcription",
+            on_poll=publish_a_progress,
         )
         self._run_process(
             [
@@ -741,6 +776,26 @@ class AsrPipeline:
             overall_percent=25,
         )
         _emit(emit, "resource_status", resource="gpu", state="released", after_stage="asr_a")
+
+        if self.tools.asr_mode == "a_only":
+            # Keep the common handoff path; its report explicitly identifies A-only.
+            write_srt(fusion_srt, a_cues)
+            report = {
+                "status": "complete", **source_identity, "source_duration_seconds": duration,
+                "asr_mode": "a_only", "a_model": self.tools.a_model_id,
+                "a_cues": len(a_cues), "c_cues": 0, "fusion_cues": len(a_cues),
+                "c_status": "skipped", "fusion_status": "skipped",
+                "c_replacements": 0, "accepted_matches": [], "a_backbone_cues": len(a_cues),
+                "timeline_preserved_from_a": True, "a_recognized_srt": str(a_recognized),
+                "opening_timing": {"status": "skipped_a_only", "changes": []},
+                "structure_warnings": {"A": a_structure_warnings, "C": [], "fusion": []},
+                "fusion_srt": str(fusion_srt), "a_chunk_work_dir": str(a_work_dir),
+                "report_path": str(report_path),
+            }
+            _json_write(report_path, report)
+            _emit(emit, "info", stage="asr_a", overall_percent=47,
+                  message="A 识别完成；本次未启用 C，继续文本检查。")
+            return fusion_srt, report
 
         # Preserve prior evidence; completed decoding can be re-filtered without GPU.
         reuse_c = _has_complete_c_transcription(c_dir)
@@ -902,6 +957,7 @@ class AsrPipeline:
             "source_mtime_ns": source_identity["source_mtime_ns"],
             "source_duration_seconds": duration,
             "a_model": self.tools.a_model_id,
+            "asr_mode": self.tools.asr_mode,
             "a_cues": len(a_cues),
             "c_cues": len(c_cues),
             "preserved_c_attempt": str(preserved_c) if preserved_c else None,

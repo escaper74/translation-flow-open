@@ -36,11 +36,11 @@ def login_codex():
 
 def check_readiness(*, mode, provider, tools=None, model=None, endpoint=None,
                     max_output_tokens=None, api_key="", probe=False, jasna=None, asr_a_model="large-v3-turbo",
-                    output_dir=None):
+                    output_dir=None, asr_mode="a_c"):
     if output_dir is not None:
         try:
             output = Path(output_dir).resolve()
-            if mode in ("video", "full", "srt"):
+            if mode in ("video", "full", "srt", "translation_sr"):
                 folder, job_prefix, cache = (".srt-translation", "srt-", "cache") if mode == "srt" else (".translation-flow", "job-", "translations")
                 validate_cache_path(output / folder / (job_prefix + "0" * 32) / cache)
             output.mkdir(parents=True, exist_ok=True)
@@ -49,13 +49,14 @@ def check_readiness(*, mode, provider, tools=None, model=None, endpoint=None,
         except (OSError, ValueError) as exc:
             return {"checks": [], "service_tested": False, "status": "blocked",
                     "message": "保存位置不可用，尚未开始处理文件：" + str(exc)}
-    report = inspect_environment(mode=mode, provider=provider, tools=tools, jasna=jasna, asr_a_model=asr_a_model)
+    report = inspect_environment(mode=mode, provider=provider, tools=tools, jasna=jasna,
+                                 asr_a_model=asr_a_model, asr_mode=asr_mode)
     report["service_tested"] = False
     missing = [item["name"] for item in report["checks"] if not item["present"]]
     if missing:
         report.update(status="blocked", message="缺少本地工具：" + "、".join(missing) + "。请在更多设置中检查工具目录，再重试。")
         return report
-    if mode in ("repackage", "picture"):
+    if mode in ("repackage", "picture", "sr"):
         report.update(status="ready", message="本地封装工具已找到；不需要登录或翻译服务。")
         return report
     if provider == "codex":
@@ -103,12 +104,13 @@ def main(argv=None):
     actions = parser.add_mutually_exclusive_group(required=True)
     actions.add_argument("--login", action="store_true")
     actions.add_argument("--check", action="store_true")
-    parser.add_argument("--mode", choices=("video", "srt", "full", "picture", "repackage"), default="srt")
+    parser.add_argument("--mode", choices=("video", "srt", "full", "picture", "repackage", "sr", "translation_sr"), default="srt")
     parser.add_argument("--provider", default="codex")
     parser.add_argument("--tool-root")
     parser.add_argument("--output-dir")
     parser.add_argument("--jasna")
     parser.add_argument("--asr-a-model", default="large-v3-turbo", choices=("large-v3", "large-v3-turbo"))
+    parser.add_argument("--asr-mode", default="a_c", choices=("a_c", "a_only"))
     parser.add_argument("--model")
     parser.add_argument("--endpoint")
     parser.add_argument("--max-output-tokens", type=int)
@@ -117,7 +119,7 @@ def main(argv=None):
     api_key = os.environ.pop("SUBTITLE_API_KEY", "")
     result = login_codex() if args.login else check_readiness(
         mode=args.mode, provider=args.provider, tools=args.tool_root, model=args.model,
-        jasna=args.jasna, asr_a_model=args.asr_a_model, output_dir=args.output_dir,
+        jasna=args.jasna, asr_a_model=args.asr_a_model, asr_mode=args.asr_mode, output_dir=args.output_dir,
         endpoint=args.endpoint, max_output_tokens=args.max_output_tokens, api_key=api_key, probe=args.probe)
     print(json.dumps(result, ensure_ascii=False))
     return 0

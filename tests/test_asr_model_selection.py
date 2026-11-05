@@ -53,6 +53,7 @@ $script:CollectQueueRequests=$true
 $script:QueueEnabled=$false
 $script:CollectedQueueItems=[Collections.Generic.List[object]]::new()
 $script:CurrentWhisperAModel='large-v3'
+$script:CurrentAsrMode='a_c'
 Start-ConfirmedRun
 $original = $script:CollectedQueueItems[0].request_path
 $legacyId=Get-StableJobId $source $target 'normal' 'codex' 'chatgpt.com' 'cli-default'
@@ -91,6 +92,23 @@ $script:PendingSrtRequestPath=''
 Start-ConfirmedRun
 $srt=Get-Content -LiteralPath $script:CollectedQueueItems[5].request_path -Raw | ConvertFrom-Json
 if ($srt.PSObject.Properties.Name -contains 'asr_a_model') { throw 'SRT inherited ASR model' }
+$TaskModeBox.SelectedItem.Tag='translation'
+$script:CurrentAsrMode='a_only'
+Start-ConfirmedRun
+$single = $script:CollectedQueueItems[6].request_path
+$request = Get-Content -LiteralPath $single -Raw | ConvertFrom-Json
+if ($request.asr_mode -ne 'a_only' -or $single -eq $candidate) { throw 'mode identities collided' }
+$before=[IO.File]::ReadAllText($single)
+$resume=Get-TaskCenterResumeRequest $single
+if ($resume.AsrMode -ne 'a_only' -or $legacyResume.AsrMode -ne 'a_c') { throw 'mode lost on resume' }
+Start-ConfirmedRun
+if ([IO.File]::ReadAllText($single) -cne $before) { throw 'mode request changed on resume' }
+$script:QueueEnabled=$true
+$script:PendingQueueResumeId='single'
+$script:QueueSnapshot=@{items=@([pscustomobject]@{id='single';request_path=$single})}
+if (Test-QueueResumeSettings) { throw 'same mode resume rejected' }
+$script:CurrentAsrMode='a_c'
+if (-not (Test-QueueResumeSettings)) { throw 'changed mode silently resumed' }
 Write-Output 'passed'
 '''
             prefix = f"$python='{sys.executable}';$repo='{str(project).replace(chr(39),chr(39)*2)}';$source='{source}';$target='{root / 'out'}';"

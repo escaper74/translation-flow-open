@@ -245,8 +245,13 @@ class FullWorkflowTests(unittest.TestCase):
             confirm_gate_viewed,
             mirror_output,
             cancelled=None,
+            on_progress=None,
         ):
             calls.append("picture")
+            if on_progress:
+                on_progress(0, 2)
+                on_progress(1, 2)
+                on_progress(2, 2)
             self.assertTrue(confirm_gpu_ready)
             self.assertTrue(confirm_gate_viewed)
             self.assertFalse(mirror_output)
@@ -381,6 +386,19 @@ class FullWorkflowTests(unittest.TestCase):
             self.assertTrue(Path(result["outputs"]["final_mkv"]).is_file())
             manifest_text = runner.paths.manifest.read_text(encoding="utf-8")
             self.assertNotIn("one-run-secret", manifest_text)
+
+    def test_picture_segment_counts_survive_translation_and_do_not_claim_completion(self):
+        with tempfile.TemporaryDirectory() as raw:
+            runner = self._runner(Path(raw), [], [])
+            runner.run()
+            events = [json.loads(line) for line in runner.events.events_path.read_text(encoding="utf-8").splitlines()]
+            progress = [e for e in events if e["event"] == "stage_progress" and e.get("stage") == "picture_workflow"]
+            self.assertEqual([(0, 2), (1, 2), (2, 2)],
+                             [(e["completed_units"], e["total_units"]) for e in progress])
+            self.assertEqual("assembling", progress[-1]["phase"])
+            self.assertTrue(all("overall_percent" not in e for e in progress))
+            finished = next(e for e in events if e["event"] == "job_completed")
+            self.assertGreater(finished["seq"], progress[-1]["seq"])
 
     def test_picture_report_accepts_small_rounding_but_rejects_content_loss(self) -> None:
         with tempfile.TemporaryDirectory() as raw:

@@ -1,5 +1,7 @@
 import json
+import io
 import os
+from contextlib import redirect_stdout
 from pathlib import Path
 import tempfile
 import subprocess
@@ -12,6 +14,7 @@ from types import SimpleNamespace
 from unittest.mock import patch
 
 from beauty_player.server import Playback, byte_range, create_server
+from beauty_player import server as beauty_server
 from beauty_player.setup import FILES
 
 
@@ -63,6 +66,31 @@ class BeautyPlaybackTests(unittest.TestCase):
         self.assertEqual(command[command.index('-ss') + 1], '12.5')
         self.assertIn('hvc1', command)
         self.assertEqual(self.source.read_bytes(), b'never modify original')
+        self.assertEqual(playback.runtime, self.root.resolve())
+
+    def test_cli_runtime_defaults_to_configured_shared_tool_root(self):
+        tools = self.root / 'shared-tools'
+        runtime = tools / 'beauty-player'
+        for name in [*FILES, 'face_landmarker.task']:
+            target = runtime / name
+            target.parent.mkdir(parents=True, exist_ok=True)
+            target.write_bytes(b'test asset')
+        seen = []
+        def construct(*args):
+            playback = Playback(*args)
+            seen.append(playback)
+            return playback
+        fake_server = SimpleNamespace(server_port=1, serve_forever=lambda: None,
+                                      server_close=lambda: None, shutdown=lambda: None)
+        with patch.object(sys, 'argv', ['beauty', '--media', str(self.source), '--tool-root', str(tools), '--no-browser']), \
+             patch('beauty_player.server.tools_from_root', return_value=(Path('ffmpeg'), Path('ffprobe'))), \
+             patch('beauty_player.server.subprocess.run', return_value=SimpleNamespace(returncode=0, stdout=json.dumps(self.probe).encode())), \
+             patch('beauty_player.server.Playback', side_effect=construct), \
+             patch('beauty_player.server.create_server', return_value=fake_server), \
+             patch('beauty_player.server.threading.Thread'), redirect_stdout(io.StringIO()):
+            beauty_server.main()
+        self.assertEqual(len(seen), 1)
+        self.assertEqual(seen[0].runtime, runtime.resolve())
 
     def test_mp4_direct_uses_probed_container_not_extension(self):
         self.probe['format']['format_name'] = 'mov,mp4,m4a,3gp,3g2,mj2'
@@ -82,6 +110,7 @@ class BeautyPlaybackTests(unittest.TestCase):
         command = playback.stream_command(12, True)
         self.assertIn('libx264', command)
         self.assertEqual(command[command.index('-c:a') + 1], 'copy')
+        self.assertEqual(command[command.index('-pix_fmt') + 1], 'yuv420p')
         self.assertEqual(command[-1], 'pipe:1')
         self.assertNotIn('nvenc', ' '.join(command))
         self.assertEqual(playback.seek_plan(12, True), {'start': 12})

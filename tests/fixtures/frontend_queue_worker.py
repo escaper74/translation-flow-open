@@ -26,7 +26,7 @@ def job(path):
     events = EventEmitter(request["job_id"], job_dir / "events.jsonl")
     events.emit("job_started")
     events.emit("stage_started", stage="translate_initial", overall_percent=10)
-    if Path(request["input_srt"]).stem == "fail":
+    if Path(request.get("input_srt") or request["input_video"]).stem == "fail":
         events.emit("job_failed", message="offline fixture failure", error_code="FixtureFailure",
                     recovery_hint="测试失败项已保留，后续项继续")
         return 1

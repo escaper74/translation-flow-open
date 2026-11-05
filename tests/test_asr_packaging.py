@@ -362,6 +362,12 @@ class AsrPipelineTests(unittest.TestCase):
                 ),
                 encoding="utf-8",
             )
+            from translation_flow.asr import _ascii_a_work_dir
+            current_chunks = _ascii_a_work_dir(job.resolve(), tools.whisper_model)
+            legacy_chunks = current_chunks.with_name("A_chunks")
+            legacy_chunks.mkdir(parents=True)
+            legacy_srt = legacy_chunks / "chunk_0001_000000s.srt"
+            legacy_srt.write_bytes(b"legacy input-seek transcript")
             calls: list[list[str]] = []
 
             def runner(args: list[str], **_: object):
@@ -399,6 +405,9 @@ class AsrPipelineTests(unittest.TestCase):
             result, _ = AsrPipeline(tools, process_runner=runner).run(source, job)
             a_call = next(call for call in calls if len(call) > 1 and call[1] == str(tools.transcribe_a))
             self.assertNotIn("--first-audio", a_call)
+            self.assertEqual(current_chunks, Path(a_call[a_call.index("--work-dir") + 1]))
+            self.assertNotEqual(legacy_chunks, current_chunks)
+            self.assertEqual(b"legacy input-seek transcript", legacy_srt.read_bytes())
 
             self.assertTrue(result.is_file())
             self.assertTrue(

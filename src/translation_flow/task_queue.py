@@ -23,6 +23,8 @@ MODULES = {
     "media_repackage": ("media_planning.cli", ".media-repackage", "technical-validation.report.json"),
     "translation_picture_final": ("full_workflow.cli", ".full-workflow", "workflow.result.json"),
     "picture_only": ("full_workflow.picture_cli", ".picture-workflow", "job.result.json"),
+    "super_resolution": ("video_enhancement.cli", ".super-resolution", "job.result.json"),
+    "translation_super_resolution": ("full_workflow.cli", ".full-workflow", "workflow.result.json"),
 }
 ACTIVE = {"starting", "running", "stopping"}
 
@@ -106,14 +108,21 @@ def request_info(path: str | Path) -> dict:
     public = {"schema_version", "workflow_mode", "job_id", "output_dir"}
     public |= ({"source_media", "output_target"} if mode == "media_repackage" else
                {"input_video", "output_target", "gates"} if mode == "picture_only" else
+               {"input_video", "output_target", "super_resolution", "preview_start_seconds"} if mode == "super_resolution" else
                {"input_srt" if mode == "srt_translation" else "input_video", "profile_id", "provider", "consent", "delivery"})
-    if mode == "translation_picture_final":
+    if mode in {"translation_picture_final", "translation_super_resolution"}:
         public.add("gates")
-    if mode in {"translation", "translation_picture_final"}:
-        public.add("asr_a_model")
+    if mode == "translation_super_resolution":
+        public.add("super_resolution")
+    if mode in {"translation", "translation_picture_final", "translation_super_resolution"}:
+        public.update({"asr_a_model", "asr_mode"})
     if set(raw) - public:
         raise ValueError("任务请求含未知字段；密钥只能通过本次进程传递")
-    if mode == "picture_only":
+    if mode == "super_resolution":
+        from video_enhancement.jobs import SRRequest
+        request = SRRequest.from_mapping(raw)
+        source, provider = request.input_video, ""
+    elif mode == "picture_only":
         from full_workflow.picture import PictureRequest
         request = PictureRequest.from_mapping(raw)
         source, provider = request.input_video, ""
@@ -134,7 +143,7 @@ def request_info(path: str | Path) -> dict:
         if mode == "srt_translation":
             from .srt_desktop import load_request
             request = load_request(path)
-        elif mode == "translation_picture_final":
+        elif mode in {"translation_picture_final", "translation_super_resolution"}:
             from full_workflow.contracts import FullWorkflowRequest
             gate = raw.get("gates", {})
             if not isinstance(gate, dict) or set(gate) - {"picture_and_mux_30m_human_accepted"}:
@@ -357,6 +366,34 @@ class TaskQueue:
                         continue
                     row["last_seq"] = item["seq"]
                     row["last_event"] = item.get("event", "")
+                    if item.get("event") == "job_started":
+                        row["work_progress"] = {}
+                    stage = item.get("stage")
+                    if isinstance(stage, str):
+                        if (row["mode"] in {"translation_picture_final", "translation_super_resolution"}
+                                and stage in {"translation_flow", "asr_a", "asr_c", "asr_fusion",
+                                              "source_review", "context", "translate_initial", "translation",
+                                              "polish", "kana_repair", "subtitle_validation", "packaging",
+                                              "mkv_packaging", "technical_validation"}
+                                and item.get("event") in {"stage_started", "stage_progress", "stage_completed", "stage_failed"}):
+                            phase = "running"
+                            if stage == "translation_flow" and item["event"] == "stage_completed":
+                                phase = "completed"
+                            elif item["event"] == "stage_failed":
+                                phase = "failed"
+                            row.setdefault("work_progress", {})["translation_flow"] = {"stage": stage, "phase": phase}
+                        if stage == "super_resolution" and type(item.get("processed_frames")) is int:
+                            row.setdefault("work_progress", {})[stage] = {
+                                "processed_frames": item["processed_frames"], "phase": "frames"}
+                        done, total = item.get("completed_units"), item.get("total_units")
+                        if (type(done) is int and type(total) is int and 0 <= done <= total
+                                and total > 0 and item.get("unit") == "segments"):
+                            row.setdefault("work_progress", {})[stage] = {
+                                "completed_units": done, "total_units": total, "unit": "segments",
+                                "phase": item.get("phase", "segments"),
+                            }
+                        if item.get("event") == "stage_completed" and stage in row.get("work_progress", {}):
+                            row["work_progress"][stage]["phase"] = "completed"
                     if isinstance(item.get("stage"), str):
                         row["stage"] = item["stage"]
                     if isinstance(item.get("overall_percent"), (int, float)):
@@ -451,7 +488,8 @@ class TaskQueue:
                         row.update(status="starting", message="正在启动", started_at=time.time(),
                                    event_offset=path.stat().st_size if path.exists() else 0,
                                    last_seq=0, terminal_event=None, outputs={}, child_pid=0, child_stamp=None,
-                                   detail="", error_code="", recovery_hint="", warning_count=0, last_warning="")
+                                   detail="", error_code="", recovery_hint="", warning_count=0, last_warning="",
+                                   work_progress={})
                         self._save()
                         launching = True
                         process = self.launcher(row, self.credentials.get(row["id"], ""))

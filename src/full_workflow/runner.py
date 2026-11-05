@@ -30,6 +30,15 @@ REPORT_TIME_TOLERANCE_SECONDS = Decimal("0.05")
 REPORT_DURATION_TOLERANCE_SECONDS = Decimal("2.0")
 
 
+def picture_progress_payload(done: int, total: int) -> dict[str, Any]:
+    # Counts describe verified segments, not elapsed time or a completed movie.
+    assembling = done == total
+    return dict(completed_units=done, total_units=total, unit="segments",
+                phase="assembling" if assembling else "segments",
+                detail=f"画面分段已完成 {done}/{total} 段。" +
+                       ("正在拼接并检查视频轨。" if assembling else ""))
+
+
 def _write_json(path: Path, payload: Mapping[str, Any]) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     temporary = path.with_suffix(path.suffix + ".tmp")
@@ -303,12 +312,14 @@ class FullWorkflowRunner:
             "profile_id": translation.profile_id,
             "provider": vars(translation.provider),
             **({"asr_a_model": translation.asr_a_model} if translation.asr_a_model != "large-v3" else {}),
+            **({"asr_mode": translation.asr_mode} if translation.asr_mode != "a_c" else {}),
             "gates": {
                 "subtitle_text_external_current_run": True,
                 "picture_and_mux_30m_human_accepted": (
                     self.request.gates.picture_and_mux_30m_human_accepted
                 ),
-                "picture_gpu_after_asr_fusion": True,
+                ("picture_gpu_after_asr_fusion" if translation.asr_mode == "a_c"
+                 else "picture_gpu_after_asr_a"): True,
             },
             "picture": {
                 "scope": "full",
@@ -432,6 +443,7 @@ class FullWorkflowRunner:
             or asr.get("source_size_bytes") != source_stat.st_size
             or asr.get("source_mtime_ns") != source_stat.st_mtime_ns
             or asr.get("a_model", "large-v3") != translation.asr_a_model
+            or asr.get("asr_mode", "a_c") != translation.asr_mode
         ):
             raise ValueError("翻译结果的 ASR 源片谱系与本次任务不匹配")
         fusion_srt = Path(str(asr.get("fusion_srt", "")))
@@ -448,11 +460,18 @@ class FullWorkflowRunner:
                     or _resolved(outputs.get("source_review_report", "")) != _resolved(source_review["report_path"])):
                 raise ValueError("Codex 结果的日文参考或源文审查报告不匹配")
             translation_source = parse_srt(reviewed)
+        elif (job_root / "source-review.pointer.json").is_file() or outputs.get("source_review_report"):
+            from translation_flow.runner import load_text_reference
+            reviewed, source_review = load_text_reference(fusion_srt, job_root, translation)
+            if (not source_review or _resolved(outputs.get("reviewed_japanese_srt", "")) != reviewed.resolve()
+                    or _resolved(outputs.get("source_review_report", "")) != _resolved(source_review["report_path"])):
+                raise ValueError("翻译结果的文本检查记录不匹配")
+            translation_source = parse_srt(reviewed)
         chinese_cues = parse_srt(Path(str(outputs["chinese_srt"])))
-        validate_timeline(fusion_cues, chinese_cues)
+        validate_timeline(translation_source, chinese_cues)
         if (
             translation_report.get("source_sha256") != subtitle_digest(translation_source)
-            or translation_report.get("subtitle_count") != len(fusion_cues)
+            or translation_report.get("subtitle_count") != len(translation_source)
             or translation_report.get("translated_count") != len(chinese_cues)
             or asr.get("fusion_cues") != len(fusion_cues)
         ):
@@ -462,8 +481,8 @@ class FullWorkflowRunner:
             raise ValueError("翻译封装报告的字幕数量与中文字幕不匹配")
         if isinstance(translation.provider, ApiProviderRequest):
             _validate_api_translation(
-                translation, asr, fusion_cues, chinese_cues, translation_report,
-                Path(str(outputs["chinese_srt"])),
+                translation, asr, translation_source, chinese_cues, translation_report,
+                Path(str(outputs["chinese_srt"])), asr_cues=fusion_cues,
             )
         if isinstance(translation.provider, ApiProviderRequest) or translation.provider.id == "codex":
             validate_completed_mkv(
@@ -674,7 +693,7 @@ class FullWorkflowRunner:
         self.events.emit(
             "stage_started",
             stage="picture_workflow",
-            detail="A+C 已通过正式结构检查；与外部翻译并行开始整片画面处理。",
+            detail=f"{'A+C' if self.request.translation.asr_mode == 'a_c' else 'A'} 已完成识别；与翻译并行开始整片画面处理。",
         )
         try:
             raw_result = self.picture_runner(
@@ -685,6 +704,9 @@ class FullWorkflowRunner:
                 ),
                 mirror_output=False,
                 cancelled=self._stopped,
+                on_progress=lambda done, total: self.events.emit(
+                    "stage_progress", stage="picture_workflow",
+                    **picture_progress_payload(done, total)),
             )
             result = self._validate_picture_result(raw_result)
             for warning in result.get("informational_warnings", []):
@@ -725,7 +747,7 @@ class FullWorkflowRunner:
         (self.paths.workflow_root / "cancel.requested").unlink(missing_ok=True)
         self.events.emit(
             "job_started",
-            workflow_mode="translation_picture_final",
+            workflow_mode=self.request.workflow_mode,
             input_video=str(self.request.translation.input_video),
         )
         try:
@@ -783,7 +805,7 @@ class FullWorkflowRunner:
 
             if translation_error is not None and picture_error is not None:
                 raise RuntimeError(
-                    "A+C 后两个并行分支均失败："
+                    "识别完成后的两个并行分支均失败："
                     f"翻译={translation_error}；画面={picture_error}"
                 ) from translation_error
             if translation_error is not None:

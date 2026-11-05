@@ -12,6 +12,7 @@ param(
 Set-StrictMode -Version Latest
 $ErrorActionPreference = "Stop"
 $script:CurrentWhisperAModel = $WhisperAModel
+$script:CurrentAsrMode = 'a_c'
 if ([string]::IsNullOrWhiteSpace($ProjectRoot)) {
     $ProjectRoot = Split-Path -Parent (Split-Path -Parent $PSScriptRoot)
 }
@@ -57,6 +58,7 @@ Add-Type -AssemblyName System.Windows.Forms
 . (Join-Path $PSScriptRoot "TranslationFlowSubtitleImport.ps1")
 . (Join-Path $PSScriptRoot "TranslationFlowLibrary.ps1")
 . (Join-Path $PSScriptRoot "TranslationFlowBeauty.ps1")
+. (Join-Path $PSScriptRoot "TranslationFlowSuperResolution.ps1")
 
 [xml]$Xaml = [IO.File]::ReadAllText((Join-Path $PSScriptRoot "TranslationFlowView.xaml"), [Text.Encoding]::UTF8)
 $xamlContext = New-Object Windows.Markup.ParserContext
@@ -81,6 +83,14 @@ $BrowseOutputButton = Get-Control "BrowseOutputButton"
 $TaskModeBox = Get-Control "TaskModeBox"
 $SubtitleFeatureButton = Get-Control "SubtitleFeatureButton"
 $PictureFeatureButton = Get-Control "PictureFeatureButton"
+$SuperResolutionCheckBox = Get-Control 'SuperResolutionCheckBox'
+$SuperResolutionPanel = Get-Control 'SuperResolutionPanel'
+$SuperResolutionModelPanel = Get-Control 'SuperResolutionModelPanel'
+$SuperResolutionModelBox = Get-Control 'SuperResolutionModelBox'
+$SuperResolutionHeightBox = Get-Control 'SuperResolutionHeightBox'
+$SuperResolutionPreviewStartBox = Get-Control 'SuperResolutionPreviewStartBox'
+$SuperResolutionPreviewButton = Get-Control 'SuperResolutionPreviewButton'
+$script:SRPreviewStart = $null
 $PictureSelectedText = Get-Control "PictureSelectedText"
 $SubtitleSelectedText = Get-Control "SubtitleSelectedText"
 $SelectedFunctionText = Get-Control "SelectedFunctionText"
@@ -124,6 +134,7 @@ $OutputFormatHintText = Get-Control "OutputFormatHintText"
 $ProfileBox = Get-Control "ProfileBox"
 $WhisperModelPanel = Get-Control "WhisperModelPanel"
 $WhisperModelBox = Get-Control "WhisperModelBox"
+$UseCCheckBox = Get-Control "UseCCheckBox"
 $WhisperModelBox.SelectedIndex = $(if ($WhisperAModel -eq "large-v3-turbo") { 0 } else { 1 })
 $ApiKeyBox = Get-Control "ApiKeyBox"
 $TaskModeHintText = Get-Control "TaskModeHintText"
@@ -205,9 +216,10 @@ if ($ValidateOnly) {
         provider_model = $script:ProviderModel
         default_provider = $script:ProviderId
         default_asr_a_model = $script:CurrentWhisperAModel
+        default_asr_mode = $script:CurrentAsrMode
         asr_a_models = @("large-v3-turbo", "large-v3")
         codex_original_picture_only = $false
-        backends = @("translation_flow.cli", "full_workflow.cli", "full_workflow.picture_cli", "media_planning.cli", "translation_flow.srt_desktop")
+        backends = @("translation_flow.cli", "full_workflow.cli", "full_workflow.picture_cli", "video_enhancement.cli", "media_planning.cli", "translation_flow.srt_desktop")
         subtitle_providers = @("codex","deepseek","qwen","kimi","openai","anthropic","gemini")
         ui_summary_contract = 1
         task_center_contract = 1
@@ -451,7 +463,7 @@ function Update-TaskModeControls {
     $mediaMode = $selectedMode -eq "media_repackage"
     $fullWorkflow = $selectedMode -eq "translation_picture_final"
     $srtMode = $selectedMode -eq "srt_translation"
-    $localOnly = $mediaMode -or $selectedMode -in @("picture_only", "none")
+    $localOnly = $mediaMode -or $selectedMode -in @("picture_only", "super_resolution", "none")
     Update-ProviderFields
     $script:ProviderId = [string]$ProviderBox.SelectedItem.Tag
     $codexMode = -not $localOnly -and $script:ProviderId -eq "codex"
@@ -459,7 +471,7 @@ function Update-TaskModeControls {
     $OutputFormatBox.IsEnabled = -not $srtMode
     $OutputFormatPanel.Visibility = $(if ($srtMode) { "Collapsed" } else { "Visible" })
     $ProfileBox.IsEnabled = -not $localOnly
-    $WhisperModelPanel.Visibility = $(if ($selectedMode -in @('translation', 'translation_picture_final')) { 'Visible' } else { 'Collapsed' })
+    $WhisperModelPanel.Visibility = $(if ($selectedMode -in @('translation', 'translation_picture_final', 'translation_super_resolution')) { 'Visible' } else { 'Collapsed' })
     $ApiKeyBox.IsEnabled = -not $localOnly -and -not $codexMode
     $ApiKeyPanel.Visibility = $(if (-not $localOnly -and -not $codexMode) { "Visible" } else { "Collapsed" })
     $ModelPanel.Visibility = $ApiKeyPanel.Visibility
@@ -469,13 +481,20 @@ function Update-TaskModeControls {
     $ProfilePanel.Visibility = $ProviderPanel.Visibility
     $Window.FindName('ProviderSettingsButton').Visibility = $ProviderPanel.Visibility
     $SetupTitle.Text = $(if ($mediaMode) { '视频换个格式' } else { '准备好，就开始' })
-    $SubtitleFeatureButton.IsChecked = $selectedMode -in @('translation','srt_translation','translation_picture_final')
+    $SubtitleFeatureButton.IsChecked = $selectedMode -in @('translation','srt_translation','translation_picture_final','translation_super_resolution')
     $PictureFeatureButton.IsChecked = $selectedMode -in @('picture_only','translation_picture_final')
+    $SuperResolutionCheckBox.IsChecked = $selectedMode -in @('super_resolution','translation_super_resolution')
+    $SuperResolutionPanel.Visibility = $(if ($SuperResolutionCheckBox.IsChecked) { 'Visible' } else { 'Collapsed' })
+    $SuperResolutionModelPanel.Visibility = $(if ($selectedMode -eq 'super_resolution') { 'Visible' } else { 'Collapsed' })
+    $nomosOnly = $selectedMode -eq 'super_resolution' -and (Get-SelectedSuperResolutionModel) -eq 'nomosuni-otf-medium'
+    $SubtitleFeatureButton.IsEnabled = -not $script:IsRunning -and -not $nomosOnly
+    $SuperResolutionCheckBox.IsEnabled = -not $script:IsRunning -and -not $PictureFeatureButton.IsChecked -and -not $mediaMode
+    $PictureFeatureButton.IsEnabled = -not $script:IsRunning -and -not $SuperResolutionCheckBox.IsChecked
     foreach ($card in @($SubtitleFeatureButton, $PictureFeatureButton)) {
         $card.Background = Convert-ToBrush $(if ($card.IsChecked) { '#ECFAF9' } else { '#FFFFFF' })
         $card.BorderBrush = Convert-ToBrush $(if ($card.IsChecked) { '#00A5A2' } else { '#E3E9EF' })
     }
-    $SubtitleSelectedText.Text = $(if ($SubtitleFeatureButton.IsChecked) { '✓ 已选择' } else { '未选择' })
+    $SubtitleSelectedText.Text = $(if ($SubtitleFeatureButton.IsChecked) { '✓ 已选择' } elseif ($nomosOnly) { '单独超分时不启用' } else { '未选择' })
     $PictureSelectedText.Text = $(if ($PictureFeatureButton.IsChecked) { '✓ 已选择' } else { '未选择' })
     $SubtitleSelectedText.Foreground = Convert-ToBrush $(if ($SubtitleFeatureButton.IsChecked) { '#00A5A2' } else { '#778599' })
     $PictureSelectedText.Foreground = Convert-ToBrush $(if ($PictureFeatureButton.IsChecked) { '#00A5A2' } else { '#778599' })
@@ -483,6 +502,8 @@ function Update-TaskModeControls {
         'media_repackage' { '当前工具：已有字幕视频换格式。' }
         'picture_only' { '去马后保存视频，保留原声音和已有字幕。' }
         'translation_picture_final' { '识别对白、精修中文字幕并去马，自动保存成品。' }
+        'super_resolution' { '本机轻量超分，保留原声音和已有字幕。' }
+        'translation_super_resolution' { '精修中文字幕与轻量超分；识别结束后才启用超分。' }
         'srt_translation' { '已识别字幕文件：直接翻译并润色，另存中文字幕。' }
         'none' { '请至少选择一个功能，也可以同时选择两项。' }
         default { if ([IO.File]::Exists($InputVideoBox.Text)) { '已识别视频文件：自动识别对白、翻译并润色。' } else { '放入视频或 SRT，自动识别对白或读取字幕，翻译并润色。' } }
@@ -502,6 +523,10 @@ function Update-TaskModeControls {
     elseif ($selectedMode -eq "picture_only") {
         $OutputFormatHintText.Text = "去马成品保留原声音和已有字幕。"
         $TaskModeHintText.Text = "按所选格式保存去马后的视频。"
+    }
+    elseif ($selectedMode -in @('super_resolution','translation_super_resolution')) {
+        $OutputFormatHintText.Text = '超分另存成品，保留原声音。'
+        $TaskModeHintText.Text = $(if ($selectedMode -eq 'super_resolution') { '单独超分 · ' + (Get-SuperResolutionModelLabel (Get-SelectedSuperResolutionModel)) + ' · 不调用翻译服务。' } else { 'Lite：识别结束后，翻译与超分并行；最后封装成片。' })
     }
     elseif ($mediaMode) {
         $StartButton.Content = "开始换格式"
@@ -622,12 +647,17 @@ function Set-InputEnabled([bool]$Enabled) {
     $BrowseVideoButton.IsEnabled = $Enabled
     $BrowseOutputButton.IsEnabled = $Enabled
     $TaskModeBox.IsEnabled = $Enabled
-    $SubtitleFeatureButton.IsEnabled = $Enabled
-    $PictureFeatureButton.IsEnabled = $Enabled
-    $SubtitleFeatureButton.IsEnabled = $Enabled
+    $SubtitleFeatureButton.IsEnabled = $Enabled -and (Get-SelectedSuperResolutionModel) -ne 'nomosuni-otf-medium'
+    $PictureFeatureButton.IsEnabled = $Enabled -and -not $SuperResolutionCheckBox.IsChecked
+    $SuperResolutionCheckBox.IsEnabled = $Enabled -and -not $PictureFeatureButton.IsChecked -and (Get-SelectedTaskMode) -ne 'media_repackage'
+    $SuperResolutionHeightBox.IsEnabled = $Enabled
+    $SuperResolutionModelBox.IsEnabled = $Enabled
+    $SuperResolutionPreviewStartBox.IsEnabled = $Enabled
+    $SuperResolutionPreviewButton.IsEnabled = $Enabled
     $RepackageToolButton.IsEnabled = $Enabled
     $ProviderBox.IsEnabled = $Enabled
     $WhisperModelBox.IsEnabled = $Enabled
+    $UseCCheckBox.IsEnabled = $Enabled
     $StartButton.IsEnabled = $Enabled -and [IO.File]::Exists($InputVideoBox.Text) -and -not $script:QueueSubmitting
     $RefreshTaskCenterButton.IsEnabled = $true
     $ResumeTaskButton.IsEnabled = $Enabled -and $null -ne $TaskHistoryGrid.SelectedItem -and
@@ -671,11 +701,15 @@ function Test-RunInputs {
     }
     $selectedMode = Get-SelectedTaskMode
     if ($selectedMode -eq 'none') { return '请至少选择一个功能。' }
+    if ($selectedMode -in @('super_resolution','translation_super_resolution') -and
+        @($script:SelectedFiles + @($InputVideoBox.Text) | Where-Object { [IO.Path]::GetExtension($_) -ieq '.srt' }).Count) {
+        return '超分需要视频文件，请从本批移出 SRT，或取消超分。'
+    }
     if ($selectedMode -in @('picture_only','translation_picture_final') -and
         @($script:SelectedFiles + @($InputVideoBox.Text) | Where-Object { [IO.Path]::GetExtension($_) -ieq '.srt' }).Count) {
         return 'SRT 只有字幕，不能去马。请取消去马，或从本批移出 SRT 后处理视频。'
     }
-    $runMediaRepackage = $selectedMode -in @("media_repackage", "picture_only")
+    $runMediaRepackage = $selectedMode -in @("media_repackage", "picture_only", "super_resolution")
     if ($runMediaRepackage) {
         $target = $OutputFormatBox.SelectedItem
         if ($null -eq $target -or @("mkv", "mp4") -notcontains [string]$target.Tag) {
@@ -812,28 +846,29 @@ function Get-StageLabel([string]$Stage) {
         "preflight" = "任务预检"
         "media_input" = "媒体输入检查"
         "codex_auth" = "Codex 登录检查"
-        "asr_review" = "识别疑点复核"
-        "source_review" = "识别疑点复核"
-        "whisper_a" = "正在识别对白（Whisper A）"
-        "asr_a" = "正在识别对白（Whisper A）"
+        "asr_review" = "核对字幕"
+        "source_review" = "重复文本检查"
+        "whisper_a" = "识别字幕"
+        "asr_a" = "识别字幕"
         "gpu_release_after_a" = "正在准备下一步"
-        "whisper_c" = "正在核对识别结果（Whisper C）"
-        "asr_c" = "正在核对识别结果（Whisper C）"
+        "whisper_c" = "辅助识别"
+        "asr_c" = "辅助识别"
         "gpu_release_after_c" = "正在整理识别结果"
-        "asr_fusion" = "正在整理字幕"
-        "context" = "正在理解内容"
-        "translation" = "正在翻译"
-        "translate_initial" = "正在翻译"
-        "polish" = "正在润色"
+        "asr_fusion" = "整理字幕"
+        "context" = "理解内容"
+        "translation" = "翻译字幕"
+        "translate_initial" = "翻译字幕"
+        "polish" = "润色字幕"
         "kana_repair" = "正在检查漏译"
         "subtitle_validation" = "正在检查字幕"
         "packaging" = "正在导出视频"
         "mkv_packaging" = "正在导出视频"
         "technical_validation" = "正在检查输出文件"
-        "translation_flow" = "翻译主线"
-        "picture_workflow" = "整片画面处理"
-        "parallel_branches" = "翻译与画面并行分支"
-        "final_mux" = "最终薄汇合"
+        "translation_flow" = "翻译字幕"
+        "picture_workflow" = "处理画面"
+        "super_resolution" = "画面超分"
+        "parallel_branches" = "处理字幕和画面"
+        "final_mux" = "导出视频"
         "mp4_delivery" = "正在导出 MP4"
         "media_probe" = "正在读取视频信息"
         "compatibility_preflight" = "正在检查格式兼容性"
@@ -852,7 +887,8 @@ function Get-StableJobId(
     [string]$ProviderHost,
     [string]$ProviderModel,
     [string]$ProviderVariant = "",
-    [string]$AsrAModel = "large-v3"
+    [string]$AsrAModel = "large-v3",
+    [string]$AsrMode = "a_c"
 ) {
     $sourceInfo = [IO.FileInfo]::new([IO.Path]::GetFullPath($InputVideo))
     $identity = @(
@@ -867,6 +903,7 @@ function Get-StableJobId(
     ) -join "`n"
     if ($ProviderVariant) { $identity += "`n$ProviderVariant" }
     if ($AsrAModel -ne "large-v3") { $identity += "`nasr-a=$AsrAModel" }
+    if ($AsrMode -ne 'a_c') { $identity += "`nasr-mode=$AsrMode" }
     $sha = [Security.Cryptography.SHA256]::Create()
     try {
         $hash = $sha.ComputeHash([Text.Encoding]::UTF8.GetBytes($identity))
@@ -1125,7 +1162,7 @@ function Finalize-Result {
         Complete-Run $true "中文字幕与报告已生成。请检查译文和疑点。"
         return
     }
-    if ($script:CurrentWorkflowMode -in @("media_repackage", "picture_only")) {
+    if ($script:CurrentWorkflowMode -in @("media_repackage", "picture_only", "super_resolution")) {
         $mediaPath = [string](Get-JsonProperty $outputs "final_media" "")
         $reportPath = [string](Get-JsonProperty $outputs "technical_report" "")
         if ($technicalStatus -ne "passed") {
@@ -1139,7 +1176,9 @@ function Finalize-Result {
             }
         }
         $script:FinalMediaPath = $mediaPath
-        $SubtitleResultText.Text = $(if ($script:CurrentWorkflowMode -eq "picture_only") { "已保留原声音和已有字幕" } else { "软字幕：唯一默认 zho（播放时可开关）" })
+        $comparisonPath = [string](Get-JsonProperty $outputs 'comparison' '')
+        if ($comparisonPath -and [IO.File]::Exists($comparisonPath)) { $script:FinalMediaPath = $comparisonPath }
+        $SubtitleResultText.Text = $(if ($script:CurrentWorkflowMode -in @("picture_only", "super_resolution")) { "已保留原声音和已有字幕" } else { "软字幕：唯一默认 zho（播放时可开关）" })
         $MkvResultText.Text = "媒体输出：$mediaPath"
         $ReportResultText.Text = "技术报告：$reportPath"
         Complete-Run $true "媒体输出和技术报告已存在。请实际播放、拖动并检查同步与字幕开关。"
@@ -1189,17 +1228,37 @@ function Finalize-Result {
 }
 
 function Start-ConfirmedRun {
+    $runSR = (Get-SelectedTaskMode) -eq 'super_resolution'
+    $runTranslationSR = (Get-SelectedTaskMode) -eq 'translation_super_resolution'
     $runPicture = (Get-SelectedTaskMode) -eq "picture_only"
     $runSrt = (Get-SelectedTaskMode) -eq "srt_translation"
     $runMediaRepackage = (Get-SelectedTaskMode) -eq "media_repackage"
-    $runFullWorkflow = (Get-SelectedTaskMode) -eq "translation_picture_final"
+    $runFullWorkflow = (Get-SelectedTaskMode) -in @("translation_picture_final", "translation_super_resolution")
     $outputDir = [IO.Path]::GetFullPath($OutputDirectoryBox.Text)
     [IO.Directory]::CreateDirectory($outputDir) | Out-Null
-    if (-not $runMediaRepackage -and -not $runPicture) { $settings = Get-SelectedProviderSettings }
-    $variant = $(if (-not $runMediaRepackage -and -not $runPicture -and $settings.Id -notin @("codex", "deepseek")) {
+    if (-not $runMediaRepackage -and -not $runPicture -and -not $runSR) { $settings = Get-SelectedProviderSettings }
+    $variant = $(if (-not $runMediaRepackage -and -not $runPicture -and -not $runSR -and $settings.Id -notin @("codex", "deepseek")) {
         "$($settings.EndpointProfile)`n$($settings.MaxOutputTokens)"
     } else { "" })
-    if ($runPicture) {
+    if ($runTranslationSR) { $variant += "`nsr-v1-$($SuperResolutionHeightBox.SelectedItem.Tag)" }
+    if ($runSR) {
+        $outputTarget = Get-SelectedOutputTarget
+        $height = [int]$SuperResolutionHeightBox.SelectedItem.Tag
+        $srModel = Get-SelectedSuperResolutionModel
+        $modelTag = $(if ($srModel -ne 'upscayl-lite-4x') { '-' + $srModel } else { '' })
+        $previewTag = $(if ($null -ne $script:SRPreviewStart) { '-preview-' + $script:SRPreviewStart.ToString('0.###',[Globalization.CultureInfo]::InvariantCulture) } else { '' })
+        $jobId = "sr-$height$modelTag$previewTag-" + (Get-StableMediaJobId $InputVideoBox.Text $outputDir $outputTarget)
+        $recordRoot = '.super-resolution'
+        $request = [ordered]@{schema_version=1;workflow_mode='super_resolution';job_id=$jobId;
+            input_video=[IO.Path]::GetFullPath($InputVideoBox.Text);output_dir=$outputDir;output_target=$outputTarget;
+            super_resolution=[ordered]@{max_height=$height}}
+        if ($srModel -ne 'upscayl-lite-4x') { $request.super_resolution['model'] = $srModel }
+        if ($null -ne $script:SRPreviewStart) { $request['preview_start_seconds'] = $script:SRPreviewStart }
+        $backendModule = 'video_enhancement.cli'
+        $script:CurrentWorkflowMode = 'super_resolution'
+        $startingMessage = '正在建立单独超分任务：' + (Get-SuperResolutionModelLabel $srModel)
+    }
+    elseif ($runPicture) {
         $outputTarget = Get-SelectedOutputTarget
         $jobId = 'picture-' + (Get-StableMediaJobId $InputVideoBox.Text $outputDir $outputTarget)
         $recordRoot = '.picture-workflow'
@@ -1237,7 +1296,7 @@ function Start-ConfirmedRun {
     elseif (-not $runMediaRepackage) {
         $profileId = [string]$ProfileBox.SelectedItem.Tag
         $jobId = Get-StableJobId $InputVideoBox.Text $outputDir $profileId `
-            $script:ProviderId $script:ProviderHost $script:ProviderModel $variant $script:CurrentWhisperAModel
+            $script:ProviderId $script:ProviderHost $script:ProviderModel $variant $script:CurrentWhisperAModel $script:CurrentAsrMode
         $recordRoot = $(if ($runFullWorkflow) { ".full-workflow" } else { ".translation-flow" })
         $request = [ordered]@{
             schema_version = 1
@@ -1260,8 +1319,10 @@ function Start-ConfirmedRun {
             }
         }
         if ($script:CurrentWhisperAModel -ne "large-v3") { $request["asr_a_model"] = $script:CurrentWhisperAModel }
+        if ($script:CurrentAsrMode -ne 'a_c') { $request['asr_mode'] = $script:CurrentAsrMode }
         if ($runFullWorkflow) {
-            $request["workflow_mode"] = "translation_picture_final"
+            $request["workflow_mode"] = $(if ($runTranslationSR) { 'translation_super_resolution' } else { 'translation_picture_final' })
+            if ($runTranslationSR) { $request['super_resolution'] = [ordered]@{max_height=[int]$SuperResolutionHeightBox.SelectedItem.Tag} }
             $request["gates"] = [ordered]@{
                 picture_and_mux_30m_human_accepted = $false
             }
@@ -1270,7 +1331,7 @@ function Start-ConfirmedRun {
             }
         }
         $backendModule = $(if ($runFullWorkflow) { "full_workflow.cli" } else { "translation_flow.cli" })
-        $script:CurrentWorkflowMode = $(if ($runFullWorkflow) { "translation_picture_final" } else { "translation" })
+        $script:CurrentWorkflowMode = $(if ($runTranslationSR) { 'translation_super_resolution' } elseif ($runFullWorkflow) { "translation_picture_final" } else { "translation" })
         $startingMessage = "已记录本次授权，正在建立正式任务。"
     }
     else {
@@ -1289,7 +1350,7 @@ function Start-ConfirmedRun {
         $script:CurrentWorkflowMode = "media_repackage"
         $startingMessage = "正在建立本地媒体重新封装任务。"
     }
-    if (-not $runMediaRepackage -and -not $runPicture -and $settings.Id -notin @("codex", "deepseek")) {
+    if (-not $runMediaRepackage -and -not $runPicture -and -not $runSR -and $settings.Id -notin @("codex", "deepseek")) {
         $request.provider["endpoint_profile"] = $settings.EndpointProfile
         $request.provider["max_output_tokens"] = $settings.MaxOutputTokens
         $request.consent["provider"] = $settings.Id
@@ -1305,7 +1366,7 @@ function Start-ConfirmedRun {
         $request['gates'] = Get-JsonProperty $priorRequest 'gates' @{}
     }
     $json = $request | ConvertTo-Json -Depth 5
-    $credential = $(if ($runMediaRepackage -or $runPicture -or $script:ProviderId -eq "codex") { "" } else { $ApiKeyBox.Password })
+    $credential = $(if ($runMediaRepackage -or $runPicture -or $runSR -or $script:ProviderId -eq "codex") { "" } else { $ApiKeyBox.Password })
     $utf8NoBom = New-Object System.Text.UTF8Encoding($false)
     if ($script:QueueEnabled -and [IO.File]::Exists($requestPath)) {
         $priorJson = [IO.File]::ReadAllText($requestPath, [Text.Encoding]::UTF8)
@@ -1396,13 +1457,13 @@ function Begin-ConfiguredRun {
         return
     }
     $InputErrorText.Text = ""
-    if ((Get-SelectedTaskMode) -in @("media_repackage", "picture_only")) {
+    if ((Get-SelectedTaskMode) -in @("media_repackage", "picture_only", "super_resolution")) {
         Start-CheckedBatch
         return
     }
     $profileLabel = [string]$ProfileBox.SelectedItem.Content
     $fullDetail = $(if ((Get-SelectedTaskMode) -eq "translation_picture_final") {
-        " A+C 正式检查点完成后，本次会使用当前 Jasna 配置处理整片画面；技术完成后仍需观看验收，并与翻译 API 并行；只有 Whisper A/C 已结束才启动 GPU，最后与原音轨和正式中文字幕汇合。"
+        " 识别完成后会处理整片画面，并与字幕翻译并行；最后合成为保留原音轨的成片。"
     } else { "" })
     $mp4Detail = $(if ((Get-SelectedOutputTarget) -eq "mp4" -and (Get-SelectedTaskMode) -ne "srt_translation") {
         " 正式 MKV 技术通过后会再追加 MP4；追加失败不会推翻或删除 MKV。"
@@ -1411,13 +1472,16 @@ function Begin-ConfiguredRun {
         $ConsentDetailText.Text = "本次通过官方 Codex CLI 的本机 ChatGPT 登录，以 CLI 默认模型翻译已有 SRT。只发送日文字幕、中文草稿和字幕上下文，用于语境、初译、润色和必要的假名修复。使用 ChatGPT/Codex 账户额度，无需 API Key；音频、视频和生成的成片始终留在本机。"
     }
     elseif ($script:ProviderId -eq "codex") {
-        $ConsentDetailText.Text = ('本次将以“{0}”模式，通过本机官方 Codex CLI 的 ChatGPT 登录翻译字幕，使用 CLI 默认模型。只发送日文字幕、中文翻译草稿及仅由字幕生成的上下文文本，用于全片语境、分批初译、二轮润色和识别疑点复核；音频、视频和生成的成片始终留在本机。使用 ChatGPT/Codex 账户额度，无需 API Key，不会自动切换到付费 API。' -f $profileLabel) + $fullDetail + $mp4Detail
+        $ConsentDetailText.Text = ('本次将以“{0}”模式，通过本机官方 Codex CLI 的 ChatGPT 登录翻译字幕，使用 CLI 默认模型。只发送日文字幕、中文翻译草稿及仅由字幕生成的上下文文本，用于全片语境、分批初译、二轮润色；音频、视频和生成的成片始终留在本机。使用 ChatGPT/Codex 账户额度，无需 API Key，不会自动切换到付费 API。' -f $profileLabel) + $fullDetail + $mp4Detail
     }
     elseif ($script:ProviderId -eq "deepseek" -and (Get-SelectedTaskMode) -ne "srt_translation") {
         $ConsentDetailText.Text = (('本次将以“{0}”模式调用 DeepSeek {1}（效果优先、默认思考模式），发送极短连接测试词、日文字幕、中文翻译草稿及仅由字幕生成的上下文文本，用于全片语境、分批初译、二轮润色和必要时一次假名修复。发送目标仅为 {2}，并按 DeepSeek 账户实际 token 用量计费；音频、视频和生成的成片始终留在本机。' -f $profileLabel, $script:ProviderModel, $script:ProviderHost) + $fullDetail + $mp4Detail)
     }
     else {
         $ConsentDetailText.Text = (('本次将以“{0}”模式调用 {1} / {2}，仅向 {3} 发送日文字幕、中文翻译草稿及由字幕生成的上下文，用于语境、分批初译、润色及必要的假名修复。费用按所选服务账户实际用量计收；音频、视频和生成的成片始终留在本机。' -f $profileLabel, $script:ProviderId, $script:ProviderModel, $script:ProviderHost) + $mp4Detail)
+    }
+    if ((Get-SelectedTaskMode) -in @('translation', 'translation_picture_final', 'translation_super_resolution')) {
+        $ConsentDetailText.Text += " 翻译前会用同一服务检查重复文本，明确的重复幻觉可移除，其余保留继续。"
     }
     if ((Get-SelectedTaskMode) -eq "srt_translation") {
         $ConsentDetailText.Text += " 本次输入为已有 SRT，只交付中文字幕与报告，不执行音频识别或封装。"
@@ -1436,7 +1500,8 @@ $TaskModeBox.Add_SelectionChanged({
     if (-not $script:IsRunning) { Update-TaskModeControls }
 })
 function Sync-FeatureMode {
-    $mode = $(if ($SubtitleFeatureButton.IsChecked -and $PictureFeatureButton.IsChecked) { 'translation_picture_final' }
+    $mode = $(if ($SuperResolutionCheckBox.IsChecked) { if ($SubtitleFeatureButton.IsChecked) { 'translation_super_resolution' } else { 'super_resolution' } }
+        elseif ($SubtitleFeatureButton.IsChecked -and $PictureFeatureButton.IsChecked) { 'translation_picture_final' }
         elseif ($PictureFeatureButton.IsChecked) { 'picture_only' }
         elseif ($SubtitleFeatureButton.IsChecked) { if ([IO.Path]::GetExtension($InputVideoBox.Text) -ieq '.srt') { 'srt_translation' } else { 'translation' } }
         else { 'none' })
@@ -1454,6 +1519,9 @@ $SubtitleFeatureButton.Add_Click({
     }
 })
 $PictureFeatureButton.Add_Click({ if (-not $script:IsRunning) { Sync-FeatureMode } })
+$SuperResolutionCheckBox.Add_Click({ if (-not $script:IsRunning) { Sync-FeatureMode } })
+$SuperResolutionPreviewButton.Add_Click({ Start-SuperResolutionPreview })
+$SuperResolutionModelBox.Add_SelectionChanged({ if (-not $script:IsRunning) { Update-TaskModeControls } })
 $RepackageToolButton.Add_Click({
     if ($script:IsRunning -or $null -ne $script:AccessBridge) { return }
     if (@($script:SelectedFiles + @($InputVideoBox.Text) | Where-Object { [IO.Path]::GetExtension($_) -ieq '.srt' }).Count) {
@@ -1470,7 +1538,7 @@ $RepackageToolButton.Add_Click({
 $ProviderBox.Add_SelectionChanged({
     if ($script:IsRunning) { return }
     $ApiKeyBox.Clear()
-    if ([string]$ProviderBox.SelectedItem.Tag -eq "codex" -and (Get-SelectedTaskMode) -notin @('picture_only','media_repackage','none')) {
+    if ([string]$ProviderBox.SelectedItem.Tag -eq "codex" -and (Get-SelectedTaskMode) -notin @('picture_only','media_repackage','super_resolution','none')) {
         Start-CodexStatusCheck
     }
     Update-TaskModeControls
@@ -1505,6 +1573,8 @@ $ResumeTaskButton.Add_Click({
         $resume = Get-TaskCenterResumeRequest ([string]$selected.RequestPath)
         $script:CurrentWhisperAModel = $resume.AsrAModel
         Select-ComboBoxItemByTag $WhisperModelBox $resume.AsrAModel
+        $script:CurrentAsrMode = $resume.AsrMode
+        $UseCCheckBox.IsChecked = $resume.AsrMode -eq 'a_c'
         $script:SelectedFiles = @()
         $SelectedFilesText.Visibility = 'Collapsed'
         $script:PendingQueueResumeId = ''
@@ -1513,7 +1583,7 @@ $ResumeTaskButton.Add_Click({
             if ($queueMatch.Count) { $script:PendingQueueResumeId = $queueMatch[0].id }
         }
         Select-ComboBoxItemByTag $TaskModeBox $resume.TaskMode
-        if ($resume.TaskMode -notin @("media_repackage", "picture_only")) {
+        if ($resume.TaskMode -notin @("media_repackage", "picture_only", "super_resolution")) {
             $restored = Get-TranslationProviderSettings $resume.ProviderId $resume.ProviderModel $resume.EndpointProfile $resume.MaxOutputTokens
             if ($restored.Host -ne $resume.ProviderHost) { throw "原任务翻译服务地址不受支持" }
             if ($restored.Id -eq "deepseek") { $script:DeepSeekModel = $restored.Model }
@@ -1526,6 +1596,9 @@ $ResumeTaskButton.Add_Click({
             Select-ComboBoxItemByTag $ProfileBox $resume.ProfileId
         }
         Select-ComboBoxItemByTag $OutputFormatBox $resume.OutputTarget
+        Select-ComboBoxItemByTag $SuperResolutionHeightBox ([string]$resume.SuperResolutionHeight)
+        Select-ComboBoxItemByTag $SuperResolutionModelBox $resume.SuperResolutionModel
+        $script:SRPreviewStart = $resume.PreviewStart
         $InputVideoBox.Text = $resume.SourcePath
         $OutputDirectoryBox.Text = $resume.OutputDirectory
         Update-TaskModeControls
@@ -1581,6 +1654,7 @@ $DropZone.Add_Drop({
 $StartButton.Add_Click({
     if ($script:QueueSubmitting -or $null -ne $script:AccessBridge) { return }
     $script:CurrentWhisperAModel = [string]$WhisperModelBox.SelectedItem.Tag
+    $script:CurrentAsrMode = $(if ($UseCCheckBox.IsChecked) { 'a_c' } else { 'a_only' })
     $script:PendingSrtRequestPath = ""
     try { Begin-ConfiguredRun }
     catch { $InputErrorText.Text = "无法建立任务：$($_.Exception.Message)" }
@@ -1614,8 +1688,13 @@ $InputVideoBox.Add_TextChanged({
 })
 $NewTaskButton.Add_Click({
     if (-not (Start-TaskDraft)) { return }
+    $script:SRPreviewStart = $null
+    Select-ComboBoxItemByTag $SuperResolutionHeightBox '1080'
+    Select-ComboBoxItemByTag $SuperResolutionModelBox 'upscayl-lite-4x'
     Select-ComboBoxItemByTag $WhisperModelBox $WhisperAModel
     $script:CurrentWhisperAModel = $WhisperAModel
+    $script:CurrentAsrMode = 'a_c'
+    $UseCCheckBox.IsChecked = $true
     $script:PendingQueueResumeId=''; $script:PendingSrtRequestPath=''; $script:SelectedFiles=@()
     $script:ImportPaths=@(); $script:ImportAutoDeselected=$false
     $ForceSubtitleTranslationBox.IsChecked=$false; $SubtitleImportPanel.Visibility='Collapsed'

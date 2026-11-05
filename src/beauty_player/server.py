@@ -15,7 +15,7 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from urllib.parse import urlsplit, parse_qs
 import webbrowser
 
-from .setup import DEFAULT, FILES
+from .setup import FILES
 
 WEB = Path(__file__).parent / "web"
 HIDDEN = getattr(subprocess, "CREATE_NO_WINDOW", 0)
@@ -40,13 +40,13 @@ def byte_range(header: str | None, size: int):
     return start, end, True
 
 class Playback:
-    def __init__(self, source: Path, tool_root: Path, runtime: Path = DEFAULT):
+    def __init__(self, source: Path, tool_root: Path, runtime: Path | None = None):
         self.source = source.resolve(strict=True)
         if not self.source.is_file():
             raise ValueError("请选择本地视频文件")
         self.ffmpeg, self.ffprobe = tools_from_root(tool_root)
-        self.runtime = runtime.resolve()
-        missing = [name for name in [*FILES, "face_landmarker.task"] if not (runtime / name).is_file()]
+        self.runtime = (runtime if runtime is not None else tool_root / "beauty-player").resolve()
+        missing = [name for name in [*FILES, "face_landmarker.task"] if not (self.runtime / name).is_file()]
         if missing:
             raise ValueError("美颜运行组件未准备：请先运行 python -m beauty_player.setup（仅首次下载）")
         probe = subprocess.run([str(self.ffprobe), "-v", "error", "-show_format", "-show_streams", "-of", "json", str(self.source)],
@@ -92,7 +92,7 @@ class Playback:
             # No output file, no original-media changes, no beauty export.
             args += ["-c:v", "libx264", "-preset", "ultrafast", "-tune", "zerolatency", "-crf", "22", "-threads", "4",
                      "-vf", "scale=w='min(1920,iw)':h='min(1080,ih)':force_original_aspect_ratio=decrease:force_divisible_by=2:flags=fast_bilinear,setsar=1",
-                     "-c:a", "copy", "-tag:v", "avc1"]
+                     "-pix_fmt", "yuv420p", "-c:a", "copy", "-tag:v", "avc1"]
         else:
             args += ["-c", "copy"]
             if self.metadata["codec"] in ("hevc", "h264"):
@@ -257,7 +257,7 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--media", required=True, type=Path)
     parser.add_argument("--tool-root", type=Path, default=Path(__file__).resolve().parents[2] / "workflow/tools")
-    parser.add_argument("--runtime", type=Path, default=DEFAULT)
+    parser.add_argument("--runtime", type=Path, help="Override the beauty-player directory under --tool-root")
     parser.add_argument("--no-browser", action="store_true")
     args = parser.parse_args()
     playback = Playback(args.media, args.tool_root, args.runtime)

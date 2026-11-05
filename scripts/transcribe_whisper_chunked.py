@@ -119,6 +119,19 @@ def ffprobe_duration(ffprobe: Path, input_video: Path) -> float:
     return float(output)
 
 
+def write_progress(path: Path | None, completed: int, total: int, phase: str) -> None:
+    """Small, text-free snapshot for the parent process; not an ASR checkpoint."""
+    if path is None:
+        return
+    path.parent.mkdir(parents=True, exist_ok=True)
+    temporary = path.with_suffix(path.suffix + ".tmp")
+    temporary.write_text(json.dumps({
+        "completed_units": completed, "total_units": total,
+        "unit": "segments", "phase": phase,
+    }), encoding="utf-8")
+    os.replace(temporary, path)
+
+
 def main() -> int:
     run_started = time.perf_counter()
     parser = argparse.ArgumentParser(description="Chunked whisper.cpp transcription.")
@@ -136,6 +149,7 @@ def main() -> int:
     parser.add_argument("--chunk-seconds", type=int, default=600)
     parser.add_argument("--duration-seconds", type=int, default=0)
     parser.add_argument("--report", type=Path)
+    parser.add_argument("--progress-file", type=Path)
     args = parser.parse_args()
 
     if args.chunk_seconds <= 0:
@@ -145,13 +159,14 @@ def main() -> int:
     if args.duration_seconds > 0:
         total_duration = min(total_duration, float(args.duration_seconds))
 
+    chunk_count = int(math.ceil(total_duration / args.chunk_seconds))
+    write_progress(args.progress_file, 0, chunk_count, "preparing")
     args.work_dir.mkdir(parents=True, exist_ok=True)
     ascii_model = args.work_dir / args.model.name
     hardlink_or_copy(args.model, ascii_model)
 
     merged_blocks: list[Block] = []
     txt_parts: list[str] = []
-    chunk_count = int(math.ceil(total_duration / args.chunk_seconds))
     chunks_report: list[dict] = []
 
     for chunk_index in range(chunk_count):
@@ -186,18 +201,25 @@ def main() -> int:
                     old_path.unlink()
 
             extract_started = time.perf_counter()
+            write_progress(args.progress_file, chunk_index, chunk_count, "extracting")
             run_command(
                 [
                     str(args.ffmpeg),
                     "-y",
+                    # Decode before trimming: ASF/WMV input seeks can land
+                    # several seconds late. WAV drops that starting timestamp,
+                    # which would make the nominal chunk offset incorrect.
+                    "-i",
+                    str(args.input_video),
                     "-ss",
                     f"{start:.3f}",
                     "-t",
                     f"{length:.3f}",
-                    "-i",
-                    str(args.input_video),
                     *(["-map", "0:a:0"] if args.first_audio else []),
                     "-vn",
+                    # Keep a delayed audio track on the container timeline.
+                    "-af",
+                    "aresample=async=1:first_pts=0",
                     "-ac",
                     "1",
                     "-ar",
@@ -209,6 +231,7 @@ def main() -> int:
             )
             extract_seconds = time.perf_counter() - extract_started
             transcribe_started = time.perf_counter()
+            write_progress(args.progress_file, chunk_index, chunk_count, "recognizing")
             run_command(
                 [
                     str(args.whisper),
@@ -257,6 +280,8 @@ def main() -> int:
                 "current_attempt_wall_seconds": time.perf_counter() - chunk_started,
             }
         )
+        write_progress(args.progress_file, chunk_index + 1, chunk_count,
+                       "assembling" if chunk_index + 1 == chunk_count else "recognizing")
 
     merged_blocks.sort(key=lambda block: (block.start, block.end))
     write_srt(args.raw_output_srt, merged_blocks)

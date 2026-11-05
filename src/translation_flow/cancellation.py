@@ -15,7 +15,7 @@ def check_cancelled(cancelled):
         raise TranslationCancelled("已停止并保留成功批次与检查点；用同一请求继续。")
 
 
-def run_asr_process(args, *, cancelled, env=None):
+def run_asr_process(args, *, cancelled, env=None, on_poll=None):
     """Drain output while polling stop; only terminate this invocation's tree."""
     check_cancelled(cancelled)
     with subprocess.Popen(
@@ -27,11 +27,15 @@ def run_asr_process(args, *, cancelled, env=None):
         try:
             while True:
                 check_cancelled(cancelled)
+                if on_poll is not None:
+                    on_poll()
                 try:
                     stdout, stderr = process.communicate(timeout=0.2)
                     break
                 except subprocess.TimeoutExpired:
                     pass
+            if on_poll is not None:
+                on_poll()
             check_cancelled(cancelled)
         except BaseException:
             if process.poll() is None:

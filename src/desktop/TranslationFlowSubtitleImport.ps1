@@ -134,13 +134,14 @@ function Get-ImportedTaskMode([string]$Path, [string]$Mode) {
     $report = Get-SubtitleImportReport $Path
     if ($null -eq $report -or $report.status -ne 'detected') { return $Mode }
     if ($Mode -eq 'translation_picture_final') { return 'picture_only' }
+    if ($Mode -eq 'translation_super_resolution') { return 'super_resolution' }
     if ($Mode -in @('translation','srt_translation')) { return 'none' }
     return $Mode
 }
 
 function Test-SubtitleImportReady {
     if ($script:RestoringTask -or $script:PendingQueueResumeId -or $script:PendingSrtRequestPath -or (Get-SelectedTaskMode) -eq 'media_repackage') { return $true }
-    if ((Get-SelectedTaskMode) -eq 'picture_only' -and -not $script:ImportAutoDeselected) { return $true }
+    if ((Get-SelectedTaskMode) -in @('picture_only','super_resolution') -and -not $script:ImportAutoDeselected) { return $true }
     foreach ($path in $script:ImportPaths) {
         if ($null -eq (Get-SubtitleImportReport $path)) {
             $script:ImportTimer.Start()

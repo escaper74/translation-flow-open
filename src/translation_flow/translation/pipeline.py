@@ -708,6 +708,7 @@ def _run_fixed_lane_phase(
                     _emit(
                         progress_callback,
                         start_event,
+                        current=completed,
                         total=len(batches),
                         batch_number=batch_number,
                         lane=lane_number,

@@ -52,6 +52,66 @@ class Process:
 
 
 class TaskQueueTests(unittest.TestCase):
+    def test_asr_and_parallel_subtitle_status_survive_snapshot_without_new_events(self):
+        payload = json.loads(make_request(self.root).read_text(encoding="utf-8"))
+        payload.pop("input_srt")
+        source = self.root / "neutral.mp4"
+        source.write_bytes(b"synthetic media identity")
+        payload.update(workflow_mode="translation_picture_final", input_video=str(source))
+        path = self.root / ".full-workflow" / payload["job_id"] / "request.json"
+        write_json(path, payload)
+        self.enqueue(path)
+        self.queue.tick()
+        emit(path, "job_started")
+        emit(path, "stage_progress", stage="asr_a", completed_units=3,
+             total_units=9, unit="segments", phase="recognizing")
+        self.queue.tick()
+        self.assertEqual(3, self.queue.snapshot()["items"][0]["work_progress"]["asr_a"]["completed_units"])
+        emit(path, "stage_completed", stage="asr_a")
+        emit(path, "stage_progress", stage="picture_workflow", completed_units=0,
+             total_units=8, unit="segments", phase="segments")
+        emit(path, "stage_completed", stage="translation_flow")
+        emit(path, "stage_progress", stage="picture_workflow", completed_units=1,
+             total_units=8, unit="segments", phase="segments")
+        self.queue.tick()
+        work = self.queue.snapshot()["items"][0]["work_progress"]
+        self.assertEqual("completed", work["translation_flow"]["phase"])
+        self.assertEqual("completed", work["asr_a"]["phase"])
+        self.assertEqual(1, work["picture_workflow"]["completed_units"])
+        self.assertEqual(work, json.loads(self.queue.path.read_text(encoding="utf-8"))["items"][0]["work_progress"])
+        emit(path, "job_started")
+        self.queue.tick()
+        self.assertEqual({}, self.queue.snapshot()["items"][0]["work_progress"])
+
+    def test_segment_counts_persist_across_other_stage_events_and_reset_on_resume(self):
+        path = make_request(self.root)
+        self.enqueue(path)
+        self.queue.tick()
+        emit(path, "job_started")
+        emit(path, "stage_progress", stage="picture_workflow", completed_units=1,
+             total_units=4, unit="segments", phase="segments")
+        emit(path, "stage_progress", stage="super_resolution", processed_frames=128)
+        emit(path, "stage_progress", stage="polish", overall_percent=55)
+        self.queue.tick()
+        row = self.queue.snapshot()["items"][0]
+        self.assertEqual("polish", row["stage"])
+        self.assertEqual(1, row["work_progress"]["picture_workflow"]["completed_units"])
+        self.assertEqual(128, row["work_progress"]["super_resolution"]["processed_frames"])
+        saved = json.loads(self.queue.path.read_text(encoding="utf-8"))
+        self.assertEqual(row["work_progress"], saved["items"][0]["work_progress"])
+        emit(path, "stage_progress", stage="picture_workflow", completed_units=4,
+             total_units=4, unit="segments", phase="assembling")
+        self.queue.tick()
+        self.assertEqual("running", self.queue.snapshot()["items"][0]["status"])
+        emit(path, "stage_completed", stage="picture_workflow")
+        emit(path, "stage_completed", stage="super_resolution")
+        self.queue.tick()
+        self.assertEqual("completed", self.queue.snapshot()["items"][0]["work_progress"]["picture_workflow"]["phase"])
+        self.assertEqual("completed", self.queue.snapshot()["items"][0]["work_progress"]["super_resolution"]["phase"])
+        emit(path, "job_started")
+        self.queue.tick()
+        self.assertEqual({}, self.queue.snapshot()["items"][0]["work_progress"])
+
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

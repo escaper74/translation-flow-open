@@ -158,3 +158,20 @@ typing_extensions           4.16.0         PSF-2.0
 pip is supplied by the chosen Python/venv bootstrap, not pinned in this lock.
 The observed existing C environment used Python 3.12.13 / pip 25.0.1. This task's
 offline source checks use Python 3.12.14. No environment was upgraded or copied.
+
+OPTIONAL SUPER-RESOLUTION
+
+Lite uses the pinned Upscayl standalone NCNN/Vulkan distribution. NomosUni OTF
+Medium uses the original FP16 SRVGGNetCompact model by Philip Hofmann (Phhofm),
+licensed CC BY 4.0, with the compatible TNTwise/SPAN-ncnn-vulkan executable.
+The external executables carry their own AGPL-3.0 terms; they are not relabeled
+as Apache-2.0 project code. Model parameters and weights are used unchanged.
+The installer retains upstream licenses and attribution alongside the downloads.
+Sources, fixed releases, and attribution: src/video_enhancement/THIRD_PARTY.txt.
+No model, native executable, DLL, CUDA wheel, or user credential is in this source
+release. A separate binary distribution must address each component's terms.
+
+2026-11-05 dependency check: all 28 pinned C requirements resolved for Windows
+x64 / Python 3.12 in an isolated pip dry-run. This checked downloads and package
+compatibility, not a fresh GPU inference installation. Lite and NomosUni were
+downloaded into a clean public-layout directory and verified by the installer.

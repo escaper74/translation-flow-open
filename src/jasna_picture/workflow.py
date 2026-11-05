@@ -1108,6 +1108,8 @@ def run_picture_workflow(
         mirror_output=mirror_output,
     )
     segment_reports = []
+    if on_progress and prepared_records:
+        on_progress(0, len(prepared_records))
     for record in prepared_records:
         check_cancelled(cancelled)
         segment_reports.append(_process_segment(

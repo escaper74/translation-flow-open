@@ -67,6 +67,7 @@ function Get-TaskCenterEntries([string]$OutputDirectory) {
     }
     $specs = @(
         [pscustomobject]@{ Root = ".picture-workflow"; Mode = "picture"; Label = "去马" },
+        [pscustomobject]@{ Root = ".super-resolution"; Mode = "sr"; Label = "轻量超分" },
         [pscustomobject]@{ Root = ".full-workflow"; Mode = "full"; Label = "完整工作流" },
         [pscustomobject]@{ Root = ".translation-flow"; Mode = "translation"; Label = "仅翻译" },
         [pscustomobject]@{ Root = ".srt-translation"; Mode = "srt"; Label = "SRT 翻译" },
@@ -104,7 +105,7 @@ function Get-TaskCenterEntries([string]$OutputDirectory) {
                     $resultPath = Join-Path $jobDirectory.FullName "workflow.result.json"
                     $manifest = Read-TaskCenterJson (Join-Path $jobDirectory.FullName "workflow.json")
                 }
-                elseif ($spec.Mode -in @("translation", "srt", "picture")) {
+                elseif ($spec.Mode -in @("translation", "srt", "picture", "sr")) {
                     $resultPath = Join-Path $jobDirectory.FullName "job.result.json"
                 }
                 else {
@@ -251,8 +252,8 @@ function Get-TaskCenterResumeRequest([string]$RequestPath) {
         throw "不支持的任务 request 协议版本"
     }
     $workflowMode = [string](Get-TaskCenterProperty $request "workflow_mode" "translation")
-    $media = $workflowMode -in @("media_repackage", "picture_only")
-    $full = $workflowMode -eq "translation_picture_final"
+    $media = $workflowMode -in @("media_repackage", "picture_only", "super_resolution")
+    $full = $workflowMode -in @("translation_picture_final", "translation_super_resolution")
     $srt = $workflowMode -eq "srt_translation"
     if (-not $media -and -not $full -and -not $srt -and $workflowMode -ne "translation") {
         throw "不支持的任务模式：$workflowMode"
@@ -293,16 +294,22 @@ function Get-TaskCenterResumeRequest([string]$RequestPath) {
         }
     }
     $asrAModel = [string](Get-TaskCenterProperty $request "asr_a_model" "large-v3")
-    if ($asrAModel -notin @("large-v3", "large-v3-turbo")) { throw "原任务的 Whisper A 模型不受支持" }
+    if ($asrAModel -notin @("large-v3", "large-v3-turbo")) { throw "原任务的识别模型不受支持" }
+    $asrMode = [string](Get-TaskCenterProperty $request 'asr_mode' 'a_c')
+    if ($asrMode -notin @('a_c', 'a_only')) { throw "原任务的识别模式不受支持" }
     return [pscustomobject]@{
         RequestPath = [IO.Path]::GetFullPath($RequestPath)
         AsrAModel = $asrAModel
+        AsrMode = $asrMode
+        SuperResolutionHeight = [int](Get-TaskCenterProperty (Get-TaskCenterProperty $request 'super_resolution' $null) 'max_height' 1080)
+        SuperResolutionModel = [string](Get-TaskCenterProperty (Get-TaskCenterProperty $request 'super_resolution' $null) 'model' 'upscayl-lite-4x')
+        PreviewStart = Get-TaskCenterProperty $request 'preview_start_seconds' $null
         SourcePath = [IO.Path]::GetFullPath($sourcePath)
         OutputDirectory = [IO.Path]::GetFullPath($outputDirectory)
         TaskMode = $(if ($media) {
             $workflowMode
         } elseif ($full) {
-            "translation_picture_final"
+            $workflowMode
         } elseif ($srt) {
             "srt_translation"
         } else {

@@ -15,6 +15,7 @@ from .srt import parse_srt, subtitle_digest, write_srt
 
 
 RESULTS = {".full-workflow": "workflow.result.json", ".translation-flow": "job.result.json",
+           ".super-resolution": "job.result.json",
            ".picture-workflow": "job.result.json", ".srt-translation": "job.result.json",
            ".media-repackage": "technical-validation.report.json"}
 
@@ -63,7 +64,7 @@ def load_delivery(request_path: str | Path) -> dict:
     if folder == ".media-repackage":
         outputs = {"final_media": result["output"]["path"]}
     variants = []
-    for key in ("final_mp4", "final_mkv", "final_media", "translation_original_mkv"):
+    for key in ("comparison", "final_mp4", "final_mkv", "final_media", "translation_original_mkv"):
         raw = outputs.get(key)
         if raw and Path(raw).is_file():
             path = no_links(Path(raw))
@@ -77,6 +78,7 @@ def load_delivery(request_path: str | Path) -> dict:
         raise ValueError("成品已移动或不存在")
     return dict(request_path=str(request_path), job_root=str(job), output_dir=str(root),
                 job_id=job.name, source=source, title=Path(source).name, kind=folder,
+                workflow_mode=request.get("workflow_mode", "translation"),
                 media=variants[0] if variants else "", variants=variants,
                 chinese_srt=chinese, outputs=outputs, result=result,
                 result_path=str(result_path), updated=result_path.stat().st_mtime,
@@ -163,6 +165,14 @@ def cleanup_plan(request_path: str | Path) -> dict:
                 for path in directory.iterdir():
                     if re.fullmatch(r"segment_\d{4,}(?:\.[\w-]+)*\.mkv", path.name):
                         candidates.add(path)
+    if item.get('workflow_mode') in {'super_resolution', 'translation_super_resolution'}:
+        sr = job / ('video' if item['kind'] == '.super-resolution' else 'super-resolution')
+        if sr.is_dir():
+            no_links(sr)
+            candidates.update(sr.glob('chunk-*.mkv'))
+        for name in ('video-only.mkv', 'upscaled.video-only.mkv'):
+            if (job / name).is_file():
+                candidates.add(job / name)
     # Only job-local WAV files; never chase arbitrary external ASR/model paths.
     translation = root / ".translation-flow" / item["job_id"] if item["kind"] == ".full-workflow" else job
     asr = translation / "asr"

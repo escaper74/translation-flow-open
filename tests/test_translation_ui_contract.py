@@ -267,9 +267,9 @@ class FormalTranslationUiContractTests(unittest.TestCase):
         self.assertNotIn('x:Name="ContinueFullWorkflowCheckBox"', self.ui_text)
         self.assertIn('"full_workflow.cli"', self.ui_text)
         self.assertIn('"full_workflow.cli"', self.bridge_text)
-        self.assertIn('workflow_mode"] = "translation_picture_final"', self.ui_text)
+        self.assertIn("'translation_super_resolution' } else { 'translation_picture_final'", self.ui_text)
         self.assertIn("picture_and_mux_30m_human_accepted = $false", self.ui_text)
-        self.assertIn("只有 Whisper A/C 已结束才启动 GPU", self.ui_text)
+        self.assertIn("识别完成后会处理整片画面，并与字幕翻译并行", self.ui_text)
         self.assertNotIn("已通过人工验收的 30 分钟路线", self.ui_text)
 
     def test_formal_ui_has_a_separate_keyless_media_repackage_mode(self) -> None:

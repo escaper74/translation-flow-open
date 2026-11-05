@@ -75,6 +75,7 @@ namespace TranslationFlow
             if (backendModule != "translation_flow.cli" &&
                 backendModule != "full_workflow.cli" &&
                 backendModule != "full_workflow.picture_cli" &&
+                backendModule != "video_enhancement.cli" &&
                 backendModule != "media_planning.cli" &&
                 backendModule != "translation_flow.srt_desktop")
                 throw new ArgumentException("Unsupported backend module.", "backendModule");
@@ -86,6 +87,8 @@ namespace TranslationFlow
                 commandPrefix = "-m full_workflow.picture_cli --request ";
             else if (backendModule == "full_workflow.cli")
                 commandPrefix = "-m full_workflow.cli --request ";
+            else if (backendModule == "video_enhancement.cli")
+                commandPrefix = "-m video_enhancement.cli --request ";
             else if (backendModule == "translation_flow.srt_desktop")
                 commandPrefix = "-m translation_flow.srt_desktop --request ";
             else
@@ -121,13 +124,14 @@ namespace TranslationFlow
 
         public void StartReadiness(string pythonPath, string workingDirectory, string mode,
                                    string provider, string model, string endpoint, string tokenCap,
-                                   string toolRoot, string apiKey, string jasnaPath, string asrModel, string outputDirectory)
+                                   string toolRoot, string apiKey, string jasnaPath, string asrModel, string outputDirectory, string asrMode = "a_c")
         {
             string args = "-m translation_flow.desktop_access --check --probe --mode " + QuoteArgument(mode)
                 + " --provider " + QuoteArgument(provider) + " --model " + QuoteArgument(model);
             if (!String.IsNullOrWhiteSpace(endpoint)) args += " --endpoint " + QuoteArgument(endpoint);
             if (!String.IsNullOrWhiteSpace(tokenCap)) args += " --max-output-tokens " + QuoteArgument(tokenCap);
             args += " --jasna " + QuoteArgument(jasnaPath) + " --asr-a-model " + QuoteArgument(asrModel);
+            args += " --asr-mode " + QuoteArgument(asrMode);
             args += " --output-dir " + QuoteArgument(outputDirectory);
             StartCommand(pythonPath, workingDirectory, args, apiKey, toolRoot);
         }
@@ -216,14 +220,14 @@ function Start-TranslationFlowBackend {
         [Parameter(Mandatory = $true)][string]$WorkingDirectory,
         [Parameter(Mandatory = $true)][string]$RequestPath,
         [Parameter(Mandatory = $true)][AllowEmptyString()][string]$ApiKey,
-        [ValidateSet("translation_flow.cli", "full_workflow.cli", "full_workflow.picture_cli", "media_planning.cli", "translation_flow.srt_desktop")]
+        [ValidateSet("translation_flow.cli", "full_workflow.cli", "full_workflow.picture_cli", "video_enhancement.cli", "media_planning.cli", "translation_flow.srt_desktop")]
         [string]$BackendModule = "translation_flow.cli",
         [string]$ToolRoot = "",
         [string]$JasnaPath = ""
     )
 
     $providerId = "deepseek"
-    if ($BackendModule -notin @("media_planning.cli", "full_workflow.picture_cli") -and [IO.File]::Exists($RequestPath)) {
+    if ($BackendModule -notin @("media_planning.cli", "full_workflow.picture_cli", "video_enhancement.cli") -and [IO.File]::Exists($RequestPath)) {
         $request = [IO.File]::ReadAllText($RequestPath, [Text.Encoding]::UTF8) | ConvertFrom-Json
         $providerId = [string]$request.provider.id
         if ($providerId -notin @("deepseek", "codex", "qwen", "kimi", "openai", "anthropic", "gemini")) { throw "不支持的翻译方式：$providerId" }
@@ -235,7 +239,7 @@ function Start-TranslationFlowBackend {
         throw "DeepSeek API Key 不能为空。"
     }
 
-    if ($providerId -eq "codex" -or $BackendModule -in @("media_planning.cli", "full_workflow.picture_cli")) { $ApiKey = "" }
+    if ($providerId -eq "codex" -or $BackendModule -in @("media_planning.cli", "full_workflow.picture_cli", "video_enhancement.cli")) { $ApiKey = "" }
 
     $bridge = New-Object TranslationFlow.ProcessBridge
     try {

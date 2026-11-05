@@ -52,7 +52,11 @@ def main(argv: list[str] | None = None) -> int:
         if args.jasna is not None:
             kwargs["jasna"] = args.jasna
         with interrupts() as cancelled:
-            FullWorkflowRunner(request, api_key, cancelled=cancelled, **kwargs).run()
+            runner = FullWorkflowRunner
+            if request.workflow_mode == "translation_super_resolution":
+                from video_enhancement.jobs import TranslationSRRunner
+                runner = TranslationSRRunner
+            runner(request, api_key, cancelled=cancelled, **kwargs).run()
         return 0
     except TranslationCancelled as exc:
         if emitter is not None:

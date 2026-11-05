@@ -128,7 +128,16 @@
                 </Grid>
               </Border>
             </Grid>
-            <Border Style="{StaticResource Surface}" Margin="0,26,0,0" Padding="22,14">
+            <Border Style="{StaticResource Surface}" Margin="0,20,0,0" Padding="22,14">
+              <DockPanel>
+                <Button x:Name="HomeSuperResolutionButton" Content="选择视频  →" Style="{StaticResource ButtonOutline}" DockPanel.Dock="Right"/>
+                <StackPanel VerticalAlignment="Center">
+                  <TextBlock Text="单独超分" FontSize="20" FontWeight="SemiBold"/>
+                  <TextBlock Text="Lite / NomosUni OTF Medium · 保留原声音与已有字幕" Style="{StaticResource Muted}" Margin="0,4,16,0"/>
+                </StackPanel>
+              </DockPanel>
+            </Border>
+            <Border Style="{StaticResource Surface}" Margin="0,20,0,0" Padding="22,14">
               <StackPanel>
                 <DockPanel>
                   <Button x:Name="HomeViewAllButton" Content="查看全部  ›" Style="{StaticResource Quiet}" DockPanel.Dock="Right"/>
@@ -192,6 +201,30 @@
                 </DockPanel>
               </ToggleButton>
             </Grid>
+            <CheckBox x:Name="SuperResolutionCheckBox" Content="轻量超分（NomosUni 仅支持单独处理）" IsChecked="False" Margin="0,0,0,12"/>
+            <StackPanel x:Name="SuperResolutionPanel" Visibility="Collapsed" Margin="0,0,0,12">
+              <StackPanel x:Name="SuperResolutionModelPanel" Margin="0,0,0,12">
+                <WrapPanel>
+                  <TextBlock Text="超分模型" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                  <ComboBox x:Name="SuperResolutionModelBox" Width="320" SelectedIndex="0">
+                    <ComboBoxItem Content="Upscayl Lite（默认）" Tag="upscayl-lite-4x"/>
+                    <ComboBoxItem Content="NomosUni OTF Medium（可选）" Tag="nomosuni-otf-medium"/>
+                  </ComboBox>
+                </WrapPanel>
+                <TextBlock Text="单独处理画面，不识别或翻译对白；原片与已有结果保留。" Style="{StaticResource Muted}" Margin="0,6,0,0"/>
+              </StackPanel>
+              <WrapPanel>
+                <TextBlock Text="目标上限" VerticalAlignment="Center" Margin="0,0,12,0"/>
+                <ComboBox x:Name="SuperResolutionHeightBox" Width="100" SelectedIndex="1">
+                  <ComboBoxItem Content="720p" Tag="720"/>
+                  <ComboBoxItem Content="1080p" Tag="1080"/>
+                </ComboBox>
+                <TextBlock Text="对照起点（秒）" VerticalAlignment="Center" Margin="20,0,8,0"/>
+                <TextBox x:Name="SuperResolutionPreviewStartBox" Text="0" Width="60"/>
+                <Button x:Name="SuperResolutionPreviewButton" Content="做 15 秒画面对照" Style="{StaticResource Quiet}" Margin="12,0,0,0"/>
+              </WrapPanel>
+              <TextBlock Text="最多放大 2 倍，保留原声音；短片对照只处理画面，左侧原画、右侧超分。" Style="{StaticResource Muted}" Margin="0,8,0,0"/>
+            </StackPanel>
             <StackPanel x:Name="SubtitleImportPanel" Visibility="Collapsed" Margin="0,0,0,10">
               <TextBlock x:Name="SubtitleImportText" Style="{StaticResource Muted}"/>
               <CheckBox x:Name="ForceSubtitleTranslationBox" Content="已有中文字幕也重新翻译" Visibility="Collapsed" Margin="0,8,0,0"/>
@@ -202,6 +235,8 @@
               <ComboBoxItem Content="已有字幕视频换格式" Tag="media_repackage"/>
               <ComboBoxItem Content="字幕与去马" Tag="translation_picture_final"/>
               <ComboBoxItem Content="去马" Tag="picture_only"/>
+              <ComboBoxItem Content="轻量超分" Tag="super_resolution"/>
+              <ComboBoxItem Content="翻译与超分" Tag="translation_super_resolution"/>
               <ComboBoxItem Content="未选择" Tag="none"/>
             </ComboBox>
             <Grid Margin="0,4,0,12">
@@ -223,6 +258,8 @@
                   <ListBoxItem Content="Turbo（默认）" Tag="large-v3-turbo" ToolTip="Whisper large-v3-turbo：更快识别对白"/>
                   <ListBoxItem Content="large-v3" Tag="large-v3" ToolTip="使用原 large-v3 识别模型"/>
                 </ListBox>
+                <CheckBox x:Name="UseCCheckBox" Content="辅助识别" IsChecked="True" Margin="0,0,0,12"
+                          ToolTip="默认开启：多识别一遍，辅助核对字幕。关闭可节省时间；两种模式都会清理明显重复的错误文本。"/>
               </StackPanel>
               <Button Grid.Column="2" x:Name="ProviderSettingsButton" Content="翻译服务  ·  Codex  ›" Style="{StaticResource Quiet}" VerticalAlignment="Center"/>
             </Grid>

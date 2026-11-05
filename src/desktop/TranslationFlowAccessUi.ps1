@@ -16,12 +16,14 @@ function Start-DesktopAccess([ValidateSet('login','check')][string]$Action) {
             $PreparationText.Text = '正在检查本地工具和服务响应，尚未开始处理文件…'
             $mode = Get-SelectedTaskMode
             $checkMode = $(if ($mode -eq 'media_repackage') { 'repackage' } elseif ($mode -eq 'picture_only') { 'picture' } elseif ($mode -eq 'translation_picture_final') { 'full' } elseif ($mode -eq 'srt_translation') { 'srt' } else { 'video' })
+            if ($mode -eq 'super_resolution') { $checkMode = 'sr' }
+            if ($mode -eq 'translation_super_resolution') { $checkMode = 'translation_sr' }
             if ($checkMode -eq 'srt' -and @($script:SelectedFiles | Where-Object { [IO.Path]::GetExtension($_) -ine '.srt' }).Count) { $checkMode='video' }
-            $settings = $(if ($checkMode -in @('repackage','picture')) { [pscustomobject]@{Id='codex';Model='cli-default'} } else { Get-SelectedProviderSettings })
+            $settings = $(if ($checkMode -in @('repackage','picture','sr')) { [pscustomobject]@{Id='codex';Model='cli-default'} } else { Get-SelectedProviderSettings })
             $endpoint = ''; $cap = ''
             if ($settings.Id -notin @('codex','deepseek')) { $endpoint=[string]$settings.EndpointProfile; $cap=[string]$settings.MaxOutputTokens }
             $script:AccessBridge.StartReadiness($python, $ProjectRoot, $checkMode, $settings.Id,
-                $settings.Model, $endpoint, $cap, (Get-TaskToolRoot), $ApiKeyBox.Password, (Get-TaskJasnaPath), $script:CurrentWhisperAModel, $OutputDirectoryBox.Text)
+                $settings.Model, $endpoint, $cap, (Get-TaskToolRoot), $ApiKeyBox.Password, (Get-TaskJasnaPath), $script:CurrentWhisperAModel, $OutputDirectoryBox.Text, $script:CurrentAsrMode)
         }
         Set-InputEnabled $false
     } catch {

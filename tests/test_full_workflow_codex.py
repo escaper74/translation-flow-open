@@ -16,6 +16,7 @@ from translation_flow.contracts import ProviderRequest
 from translation_flow.runner import TranslationFlowRunner
 from translation_flow.srt import parse_srt, subtitle_digest, write_srt
 from translation_flow.translation.codex_provider import CodexQuotaExceeded, TranslationCancelled
+from translation_flow.translation.source_review import prepare_codex_source
 
 
 class ChangedAsr(FakeAsr):
@@ -64,7 +65,8 @@ class FullWorkflowCodexTests(unittest.TestCase):
 
         runner.picture_runner = retained_picture
         runner.translation_runner_factory = lambda *args, **kwargs: TranslationFlowRunner(
-            *args, codex_provider_factory=provider, asr_factory=asr, packager_factory=packager, **kwargs)
+            *args, codex_provider_factory=provider, asr_factory=asr, packager_factory=packager,
+            source_preparer=prepare_codex_source, **kwargs)  # Exercise legacy source-review checkpoints.
         return runner
 
     def test_reviewed_source_full_workflow_and_mp4_resume_without_repeated_calls(self):
@@ -90,7 +92,7 @@ class FullWorkflowCodexTests(unittest.TestCase):
             runner.picture_runner = picture
             runner.translation_runner_factory = lambda *args, **kwargs: TranslationFlowRunner(
                 *args, codex_provider_factory=AfterPicture, asr_factory=ChangedAsr,
-                packager_factory=FakePackager, **kwargs)
+                packager_factory=FakePackager, source_preparer=prepare_codex_source, **kwargs)
             result = runner.run()
             job_root = runner._translation_result_path().parent
             pointer = json.loads((job_root / "source-review.pointer.json").read_text(encoding="utf-8"))

@@ -9,6 +9,7 @@ from typing import Any, Mapping
 SCHEMA_VERSION = 1
 SUPPORTED_PROFILES = {"normal", "adult_direct"}
 SUPPORTED_ASR_A_MODELS = {"large-v3", "large-v3-turbo"}
+SUPPORTED_ASR_MODES = {"a_c", "a_only"}
 DEFAULT_DEEPSEEK_MODEL = "deepseek-v4-pro"
 SUPPORTED_DEEPSEEK_MODELS = {"deepseek-v4-pro", "deepseek-v4-flash"}
 _JOB_ID = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,79}$")
@@ -113,6 +114,7 @@ class JobRequest:
     consent: RunConsent
     additional_mp4: bool = False
     asr_a_model: str = "large-v3"
+    asr_mode: str = "a_c"
 
     @classmethod
     def from_mapping(cls, value: Mapping[str, Any]) -> "JobRequest":
@@ -144,6 +146,9 @@ class JobRequest:
         asr_a_model = value.get("asr_a_model", "large-v3")
         if not isinstance(asr_a_model, str) or asr_a_model not in SUPPORTED_ASR_A_MODELS:
             raise ValueError("asr_a_model 必须是 large-v3 或 large-v3-turbo")
+        asr_mode = value.get("asr_mode", "a_c")
+        if not isinstance(asr_mode, str) or asr_mode not in SUPPORTED_ASR_MODES:
+            raise ValueError("asr_mode 必须是 a_c 或 a_only")
         consent = value.get("consent", {})
         if not isinstance(consent, Mapping):
             raise ValueError("consent 必须是 JSON object")
@@ -159,4 +164,5 @@ class JobRequest:
             consent=RunConsent.from_mapping(consent),
             additional_mp4=delivery.get("additional_mp4", False),
             asr_a_model=asr_a_model,
+            asr_mode=asr_mode,
         )

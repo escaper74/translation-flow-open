@@ -40,6 +40,52 @@ def is_alive(pid):
 
 
 class AsrCancellationTests(unittest.TestCase):
+    def test_live_a_progress_reaches_events_before_process_exit(self):
+        with tempfile.TemporaryDirectory() as raw:
+            root = Path(raw)
+            tools = asr_fixtures.AsrPipelineTests()._tools(root)
+            tools = replace(tools, python=Path(sys.executable), asr_mode="a_only")
+            tools.transcribe_a.write_text('''
+import json, os, sys, time
+from pathlib import Path
+def arg(name): return Path(sys.argv[sys.argv.index(name) + 1])
+def progress(done, phase):
+    path = arg('--progress-file')
+    temporary = path.with_suffix('.tmp')
+    temporary.write_text(json.dumps(dict(completed_units=done, total_units=2, phase=phase)))
+    os.replace(temporary, path)
+progress(1, 'recognizing')
+time.sleep(0.7)
+for name in ('--output-srt', '--raw-output-srt'):
+    arg(name).write_text('1\\n00:00:00,000 --> 00:00:01,000\\nHello\\n', encoding='utf-8')
+progress(2, 'assembling')
+arg('--work-dir').mkdir(parents=True, exist_ok=True)
+(arg('--work-dir') / 'exited').touch()
+''', encoding="utf-8")
+            tools.clean_srt.write_text('''
+import shutil, sys
+shutil.copyfile(sys.argv[sys.argv.index('--input')+1], sys.argv[sys.argv.index('--output')+1])
+''', encoding="utf-8")
+            source = root / "neutral.mp4"
+            source.write_bytes(b"synthetic identity")
+            work = root / "chunks"
+            seen = []
+
+            def events(event, **payload):
+                if event == "stage_progress" and payload.get("stage") == "asr_a":
+                    seen.append((payload, (work / "exited").exists()))
+
+            with patch("translation_flow.asr.check_media_input", return_value={
+                "duration_seconds": 1200, "warnings": [],
+            }), patch("translation_flow.asr._ascii_a_work_dir", return_value=work), \
+                    patch.object(AsrPipeline, "_gate", return_value=[]):
+                _, report = AsrPipeline(tools).run(source, root / "asr", emit=events)
+            self.assertEqual("complete", report["status"])
+            self.assertEqual([0, 1, 2], [p["completed_units"] for p, _ in seen])
+            self.assertFalse(seen[1][1], "progress must arrive while A is still running")
+            self.assertEqual("assembling", seen[-1][0]["phase"])
+            self.assertNotIn("text", seen[-1][0])
+
     @unittest.skipUnless(os.name == "nt", "Windows owned process-tree termination")
     def test_stop_during_a_exits_wrapper_and_whisper_child_without_starting_c(self):
         with tempfile.TemporaryDirectory() as raw:
@@ -134,12 +180,14 @@ class AsrCancellationTests(unittest.TestCase):
                     "--output-srt", str(root / "A.srt"), "--raw-output-srt", str(root / "A.raw.srt"),
                     "--output-txt", str(root / "A.txt"), "--work-dir", str(work),
                     "--ffmpeg", "fake-ffmpeg", "--ffprobe", "fake-ffprobe", "--whisper", "fake-whisper",
-                    "--model", str(model), "--report", str(root / "timing.json")]
+                    "--model", str(model), "--report", str(root / "timing.json"),
+                    "--progress-file", str(root / "progress.json")]
             with patch.object(sys, "argv", argv), patch.object(chunks, "ffprobe_duration", return_value=1200):
                 with patch.object(chunks, "run_command", side_effect=RuntimeError("interrupted")):
                     with self.assertRaisesRegex(RuntimeError, "interrupted"):
                         chunks.main()
                 self.assertTrue(partial.with_suffix(".incomplete").exists())
+                self.assertEqual(1, json.loads((root / "progress.json").read_text())["completed_units"])
                 self.assertFalse((root / "A.srt").exists())
                 # Simulate a killed Whisper having already written both outputs.
                 partial.with_suffix(".srt").write_text(cue, encoding="utf-8")
@@ -149,6 +197,8 @@ class AsrCancellationTests(unittest.TestCase):
                 self.assertEqual(["fake-ffmpeg", "fake-whisper"], calls)
                 self.assertFalse(partial.with_suffix(".incomplete").exists())
                 self.assertEqual(original, complete.with_suffix(".srt").read_bytes())
+                progress = json.loads((root / "progress.json").read_text())
+                self.assertEqual((2, 2, "assembling"), (progress["completed_units"], progress["total_units"], progress["phase"]))
                 timing = json.loads((root / "timing.json").read_text(encoding="utf-8"))
                 self.assertEqual(1, timing["reused_chunks"])
                 self.assertEqual(0, timing["chunks"][0]["transcribe_seconds"])
